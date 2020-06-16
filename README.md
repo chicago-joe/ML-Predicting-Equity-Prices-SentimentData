@@ -1,2 +1,2 @@
 # ML-Predicting-Equity-Prices-SentimentData
-project to predict US Equity prices using social media data
+predicting US Equity prices through machine learning models on social media sentiment data
