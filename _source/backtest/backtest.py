@@ -5,27 +5,36 @@
 #
 # Contact: loss2@illinois.edu
 ###############################################################
+# Module imports
+
+import os, sys, logging
+import copy
+from pathlib import Path
+from datetime import datetime as dt
 import pandas as pd
 import numpy as np
-import os, sys
-from fnCommon import setPandas, setLogging, setOutputFile
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score, accuracy_score, explained_variance_score
-from pathlib import Path
-# import pylab as plot
-import matplotlib.pyplot as plt
 from sklearn.model_selection import GridSearchCV
 from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
+import matplotlib.pyplot as plt
+# import pylab as plot
+
 import warnings
 warnings.simplefilter("ignore")
-import copy
 
+# --------------------------------------------------------------------------------------------------
+# custom imports
+
+from fnCommon import setPandas, setLogging, setOutputFile
+LOG_FILE_NAME = os.path.basename(__file__)
 
 
 # --------------------------------------------------------------------------------------------------
-#
+# todo:
+# classify returns
 
 def fnClassifyReturns(rtnBins=None, stdDevBins = None, rtn=None, rtnStdDev=None):
 
@@ -56,21 +65,15 @@ def fnClassifyReturns(rtnBins=None, stdDevBins = None, rtn=None, rtnStdDev=None)
     return rtnClassified
 
 
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------------------------------
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
 # noinspection DuplicatedCode
 def SPY():
+
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
 
-    dfSPY = pd.read_csv(path + "SPY.csv")
+    dfSPY = pd.read_csv(path + "SPY Price Data.csv")
     dfSPY.index = dfSPY['Date']
 
     rtnTommorrow = (dfSPY['Adj_Close'][:-1].values - dfSPY['Adj_Close'][1:]) / dfSPY['Adj_Close'][1:]
@@ -81,46 +84,46 @@ def SPY():
     rtnStdDev=rtnToday.iloc[::-1].rolling(250).std().iloc[::-1]
     rtnStdDev=rtnStdDev.dropna()
     rtnStdDev=rtnStdDev[1:]
-    
-    rtnTommorrowClassified = [2 if rtnTommorrow[date] > rtnStdDev[date] * 1.0 
-                     else 1 if rtnTommorrow[date] > rtnStdDev[date] * 0.05 
-                     else 0 if rtnTommorrow[date] > rtnStdDev[date] * -0.05 
-                     else -1 if rtnTommorrow[date] > rtnStdDev[date] * -1.0 
+
+    rtnTommorrowClassified = [2 if rtnTommorrow[date] > rtnStdDev[date] * 1.0
+                     else 1 if rtnTommorrow[date] > rtnStdDev[date] * 0.05
+                     else 0 if rtnTommorrow[date] > rtnStdDev[date] * -0.05
+                     else -1 if rtnTommorrow[date] > rtnStdDev[date] * -1.0
                      else -2 for date in rtnStdDev.index]
 
     # rtnClassified = fnClassifyReturns(rtnBins=[2,1,0,-1,-2],stdDevBins = [1.0,0.05,-0.05,-1],rtn=rtnTommorrow, rtnStdDev = rtnStdDev)
     # rtnClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTommorrow]
 
 
-    dfTMC = pd.DataFrame(rtnTommorrowClassified)
-    dfTMC.index = rtnStdDev.index
-    dfTMC.columns = ['rtnClassified']
+    rtnTommorrowClassified = pd.DataFrame(rtnTommorrowClassified)
+    rtnTommorrowClassified.index = rtnStdDev.index
+    rtnTommorrowClassified.columns = ['rtnClassified']
 
-    rtnTodayClassified = [2 if rtnToday[date] > rtnStdDev[date] * 1.0 
-                          else 1 if rtnToday[date] > rtnStdDev[date] * 0.05 
-                          else 0 if rtnToday[date] > rtnStdDev[date] * -0.05 
-                          else -1 if rtnToday[date] > rtnStdDev[date] * -1.0 
+    rtnTodayClassified = [2 if rtnToday[date] > rtnStdDev[date] * 1.0
+                          else 1 if rtnToday[date] > rtnStdDev[date] * 0.05
+                          else 0 if rtnToday[date] > rtnStdDev[date] * -0.05
+                          else -1 if rtnToday[date] > rtnStdDev[date] * -1.0
                           else -2 for date in rtnStdDev.index]
 
     # rtnClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTommorrow]
 
-    dfTOC = pd.DataFrame(rtnTodayClassified)
-    dfTOC.index = rtnStdDev.index
-    dfTOC.columns = ['rtnTodayClassified']
+    rtnTodayClassified = pd.DataFrame(rtnTodayClassified)
+    rtnTodayClassified.index = rtnStdDev.index
+    rtnTodayClassified.columns = ['rtnTodayClassified']
 
     rtnTommorrow = pd.DataFrame(rtnTommorrow)
     rtnToday = pd.DataFrame(rtnToday)
     rtnTommorrow.columns = ['rtnTommorrow']
     rtnToday.columns = ['rtnToday']
 
-    return rtnToday, rtnTommorrow, dfTMC, dfTOC
+    return rtnToday, rtnTommorrow, rtnTommorrowClassified, rtnTodayClassified
 
 
 # --------------------------------------------------------------------------------------------------
 # read in activity feed data
 
 def fnLoadActivityFeed(ticker='SPY'):
-    
+
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\activityFeed\\'
 
     colNames = ['ticker', 'date', 'description', 'sector', 
@@ -168,28 +171,33 @@ def fnLoadActivityFeed(ticker='SPY'):
     dfT["mean_raw_s"] = dfAgg.groupby("Date")["raw_s"].mean()
     dfT["mean_s_dispersion"] = dfAgg.groupby("Date")["s-dispersion"].mean()
     
-    dfT['volume_base_s_z'] = (dfT['mean_volume_base_s'] - dfT['mean_volume_base_s'].rolling(26).mean()) \
+    if ticker=='SPY':
+        dfT['volume_base_s_z'] = (dfT['mean_volume_base_s'] - dfT['mean_volume_base_s'].rolling(26).mean()) \
                              / dfT['mean_volume_base_s'].rolling(26).std()
-    dfT['s_dispersion_z'] = (dfT['mean_s_dispersion'] - dfT['mean_s_dispersion'].rolling(26).mean()) \
+        dfT['s_dispersion_z'] = (dfT['mean_s_dispersion'] - dfT['mean_s_dispersion'].rolling(26).mean()) \
                             / dfT['mean_s_dispersion'].rolling(26).std()
+    
+    elif ticker == 'ES_F':
+        dfT['volume_base_s_delta']=(dfT['mean_volume_base_s'][1:]-dfT['mean_volume_base_s'][:-1].values)
+        dfT['s_dispersion_delta']=(dfT['mean_s_dispersion'][1:]-dfT['mean_s_dispersion'][:-1].values)
     
     dfT['raw_s_MACD_ewma12-ewma26'] = dfT["mean_raw_s"].ewm(span = 12).mean() - dfT["mean_raw_s"].ewm(span = 26).mean()
 
     dfT = dfT.drop(columns = ['Date', 'raw_s', 's-volume', 's-dispersion', 'Time', 'volume_base_s'])
-    dfT.columns = "spy_" + dfT.columns
+    dfT.columns = ticker + ':' + dfT.columns
 
     return dfT
 
 
-    # --------------------------------------------------------------------------------------------------
-    # combine and aggregate spy / futures activity feed ata
+# --------------------------------------------------------------------------------------------------
+# combine and aggregate spy / futures activity feed ata
 
 def fnAggActivityFeed(df1, df2):
 
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
-    rtnToday, rtnTommorrow, dfTMC, dfTOC = SPY()
+    rtnToday, rtnTommorrow, rtnTommorrowClassified, rtnTodayClassified = SPY()
 
     rtnStdDev = rtnToday.iloc[::-1].rolling(250).std().iloc[::-1]
     rtnStdDev = rtnStdDev.dropna()
@@ -197,7 +205,7 @@ def fnAggActivityFeed(df1, df2):
 
     rtnStdDev.columns = ['rtnStdDev']
 
-    dfAgg = pd.concat([dfA, rtnTommorrow, rtnToday, dfTMC, rtnStdDev, dfTOC],
+    dfAgg = pd.concat([dfA, rtnTommorrow, rtnToday, rtnTommorrowClassified, rtnStdDev, rtnTodayClassified],
                       axis = 1,
                       sort = False,
                       join = 'inner').dropna()
@@ -208,23 +216,25 @@ def fnAggActivityFeed(df1, df2):
 # --------------------------------------------------------------------------------------------------
 # winsorize data method
 
-def using_mstats(s):
+def winsorizeData(s):
     return winsorize(s, limits = [0.005, 0.005])
 
 
 # --------------------------------------------------------------------------------------------------
 # adf testing
 
-def adf_test(timeseries):
+def adf_test(timeSeries):
     # print('Results of Augment Dickey-Fuller Test:')
 
-    dftest = adfuller(timeseries, autolag = 'AIC')
-    dfoutput = pd.Series(dftest[0:4], index = ['Test Statistic', 'p-value', '#Lags Used', 'Number of Observations Used'])
+    dfADF = adfuller(timeSeries, autolag = 'AIC')
+    output = pd.Series(dfADF[0:4], index = ['Test Statistic', 'p-value', '#Lags Used', 'Number of Observations Used'])
 
-    for key, value in dftest[4].items():
-        dfoutput['Critical Value (%s)' % key] = value
+    for key, value in dfADF[4].items():
+        output['Critical Value (%s)' % key] = value
 
-    return (dfoutput)
+    logging.debug('ADF Testing: %s \n%s\n' % (timeSeries.name, output))
+
+    return output
 
 
 # --------------------------------------------------------------------------------------------------
@@ -232,6 +242,7 @@ def adf_test(timeseries):
 
 def stationarity(result):
     plist = { }
+
     for col in result:
         if adf_test(result[col])['p-value'] < 0.05:
             st = True
@@ -245,46 +256,58 @@ def stationarity(result):
 # --------------------------------------------------------------------------------------------------
 # predictions
 
-def predict(df, ntrain, ntest):
+def predict(df, nTrain, nTest):
 
     print(df.index[len(df) - 1])
 
-    X_train = df[0:ntrain]
-    X_test = df[ntrain:ntrain + ntest]
+    X_train = df[0:nTrain]
+    X_test = df[nTrain:nTrain + nTest]
 
-    y_train = X_train['next_Return']
-    #    train_y_class=df_train['classret']
-    y_test = X_test['next_Return']
-    #    test_y_class=df_test['classret']
+    y_train = X_train['rtnTommorrow']
+    y_test = X_test['rtnTommorrow']
 
-    X_train.drop(['next_Return', 'classret'], axis = 1)
-    X_test.drop(['next_Return', 'classret'], axis = 1)
+    #    train_y_class=df_train['rtnClassified']
+    #    test_y_class=df_test['rtnClassified']
 
-    X_train = X_train.apply(using_mstats, axis = 0)
-    maxtrain = X_train.max()
-    mintrain = X_train.min()
+    X_train.drop(['rtnTommorrow', 'rtnClassified'], axis = 1)
+    X_test.drop(['rtnTommorrow', 'rtnClassified'], axis = 1)
 
-    for col in X_test:
-        X_test[col][X_test[col] < mintrain[col]] = mintrain[col]
-        X_test[col][X_test[col] > maxtrain[col]] = maxtrain[col]
+    X_train = X_train.apply(winsorizeData, axis = 0)
+    maxTrain = X_train.max()
+    minTrain = X_train.min()
 
+    conditions = [(X_test < minTrain), (X_test > maxTrain)]
+    choices = [minTrain, maxTrain]
+    tmp = np.select(conditions, choices, default = X_test)
+
+    X_test = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
+    # dfNew = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
+
+
+    # --------------------------------------------------------------------------------------------------
     # test for stationarity
-    slist = (stationarity(X_train))
 
-    slist = pd.DataFrame(slist, index = [0])
-    factors = []
+    stationarityResults = (stationarity(X_train))
 
-    for i in slist.columns:
-        if slist[i][0] == 1:
-            factors.append(i)
+    stationarityResults = pd.DataFrame(stationarityResults, index = [0])
+    stationaryFactors = []
 
-    factors.remove("classret")
-    factors.remove("next_Return")
+    for i in stationarityResults.columns:
+        if stationarityResults[i][0] == 1:
+            stationaryFactors.append(i)
 
-    X_train = X_train[factors]
-    X_test = X_test[factors]
+    stationaryFactors.remove("rtnClassified")
+    stationaryFactors.remove("rtnTommorrow")
 
+    logging.debug('Final Stationary Factors:\n%s' % pd.Series(stationaryFactors))
+
+    X_train = X_train[stationaryFactors]
+    X_test = X_test[stationaryFactors]
+
+
+    # --------------------------------------------------------------------------------------------------
     # Preprocess / Standardize data
+
     sc_X = StandardScaler()
     X_train_std = sc_X.fit_transform(X_train)
     X_test_std = sc_X.transform(X_test)
@@ -297,110 +320,203 @@ def predict(df, ntrain, ntest):
 
     RFmodel = RandomForestRegressor(n_estimators = best_n, max_leaf_nodes = best_leaf_nodes, n_jobs = -1)
     # RFmodel = RandomForestClassifier(n_estimators = best_n,max_leaf_nodes=best_leaf_nodes,n_jobs=-1)
+
     RFmodel.fit(X_train_std, y_train)
 
-    # predict on in-sample and oos
+
+    # --------------------------------------------------------------------------------------------------
+    # predict in-sample and out-of-sample
+
     y_train_pred = RFmodel.predict(X_train_std)
     y_test_pred = RFmodel.predict(X_test_std)
 
-    print([df.index[len(df) - 1], y_test_pred])
-    print('MSE train: %.3f, test: %.3f' % (
-            mean_squared_error(y_train, y_train_pred),
-            mean_squared_error(y_test, y_test_pred)))
+    # print([df.index[len(df) - 1], y_test_pred])
+    logging.info('Calculating %s predictions...' % df.index[len(df) - 1])
 
-    print('R^2 train: %.3f, test: %.3f' % (
-            r2_score(y_train, y_train_pred),
-            r2_score(y_test, y_test_pred)))
 
-    # print('accuracy train: %.3f, test: %.3f' % (
-    #        accuracy_score(y_train, y_train_pred),
-    #        accuracy_score(y_test, y_test_pred)))
+    #
+    # print('MSE train: %.3f, test: %.3f' % (
+    #         mean_squared_error(y_train, y_train_pred),
+    #         mean_squared_error(y_test, y_test_pred)))
+    #
+    # print('R^2 train: %.3f, test: %.3f' % (
+    #         r2_score(y_train, y_train_pred),
+    #         r2_score(y_test, y_test_pred)))
+    #
+    # # print('accuracy train: %.3f, test: %.3f' % (
+    # #        accuracy_score(y_train, y_train_pred),
+    # #        accuracy_score(y_test, y_test_pred)))
+    #
+    # print('explanined variance train: %.3f, test: %.3f' % (
+    #         explained_variance_score(y_train, y_train_pred),
+    #         explained_variance_score(y_test, y_test_pred)))
 
-    print('explanined variance train: %.3f, test: %.3f' % (
-            explained_variance_score(y_train, y_train_pred),
-            explained_variance_score(y_test, y_test_pred)))
     return [df.index[len(df) - 1], y_test_pred]
 
 
 # --------------------------------------------------------------------------------------------------
-# determine the position based off pred_y
+# determine firstQuantileRisk to spy based of 1st quantile signal
 
-def position(pred_y):
+def firstQuantileRisk(value, q1signal):
+    if value > q1signal:
+        return 1
+    elif value > 0:
+        return 0.75
+    else:
+        return 2
 
-    index_y = pred_y[0]
-    pred_y = pred_y[1]
 
-    f = open("tempsave.csv", "a")
-    f.write("\n")
+# --------------------------------------------------------------------------------------------------
+# determine the position based off predictionsY
 
-    q1signal = np.quantile(pred_y, 0.25) - 0.000001
-    print('q1:', q1signal)
-    lastsignal = pred_y[len(pred_y) - 1]
-    print('pred', lastsignal)
+def position(predictionsY, positionRecord):
 
-    # --------------------------------------------------------------------------------------------------
-    # determine risk to spy based of 1st quantile signal
+    index_y = predictionsY[0]
+    predictionsY = predictionsY[1]
 
-    def risk(val, q1signal):
-        if val > q1signal:
-            return 1
-        elif val > 0:
-            return 0.75
-        else:
-            return 2
 
-    riskToSpy = (len(pred_y) - 1) / sum([risk(n, q1signal) for n in pred_y])
+    # f = open("tempsave.csv", "a")
+    # f.write("\n")
 
-    if (lastsignal > q1signal and lastsignal > 0.000001):
-        f.write(index_y + ',' + str(riskToSpy))
-        f.close()
-        return [index_y, riskToSpy]
+    q1signal = np.quantile(predictionsY, 0.25) - 0.000001
+    # print('q1:', q1signal)
+    lastsignal = predictionsY[len(predictionsY) - 1]
+    # print('pred', lastsignal)
+
+    riskToSpy = (len(predictionsY) - 1) / sum([firstQuantileRisk(n, q1signal) for n in predictionsY])
+
+    #
+    # if (lastsignal > q1signal and lastsignal > 0.000001):
+    #     print([index_y, riskToSpy])
+    #
+    # elif (lastsignal > 0.000001):
+    #     print([index_y, 0.75 * riskToSpy])
+    #
+    # elif (lastsignal > 0):
+    #     print([index_y, 0])
+    #
+    # else:
+    #     print([index_y, -1])
+
+
+
+    if ((lastsignal > q1signal) & (lastsignal > 0.000001)):
+        # f.write(index_y + ',' + str(riskToSpy))
+        # f.close()
+        # position = [index_y,riskToSpy]
+        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
+        positionRecord.loc[positionRecord.index==index_y, 'position'] = riskToSpy
+
+        # positionRecord.append(position)
+        # return position
 
     elif (lastsignal > 0.000001):
-        f.write(index_y + ',' + str(0.75 * riskToSpy))
-        f.close()
-        return [index_y, 0.75 * riskToSpy]
+        # f.write(index_y + ',' + str(0.75 * riskToSpy))
+        # f.close()
+        positionRecord.loc[positionRecord.index==index_y, 'position'] = riskToSpy * 0.75
+        # position = riskToSpy * 0.75
+
+        # positionRecord.append(position)
+        # return position
 
     elif (lastsignal > 0):
-        f.write(index_y + ',' + str(0))
-        f.close()
-        return [index_y, 0]
+        # f.write(index_y + ',' + str(0))
+        # f.close()
+        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
+        # position.loc[:, 'position'] = 0.0
+        positionRecord.loc[positionRecord.index==index_y, 'position'] = 0
+
+        # position = riskToSpy * 0.0
+
+        # positionRecord.append(position)
+        # return position
 
     else:
-        f.write(index_y + ',' + str(-1))
-        f.close()
-        return [index_y, -1]
+        # f.write(index_y + ',' + str(-1))
+        # f.close()
+        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
+        # position.loc[:, 'position'] = -1
+        positionRecord.loc[positionRecord.index==index_y, 'position'] = -1.0
+        # position = -1
+        # positionRecord.append(position)
 
+        # return position
+    return positionRecord
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# run main
 
 if __name__ == '__main__':
 
+    # custom pandas settings
     setPandas()
 
-    dfSpy = fnLoadActivityFeed(ticker='SPY')
-    dfFutures = fnLoadActivityFeed(ticker='ES_F')
+    # set numpy float format
+    floatFormatter = "{:,.6f}".format
+    np.set_printoptions(formatter = {'float_kind':floatFormatter})
 
-    dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
+    path = '.\\_source\\'
 
-    ntrain = 464
-    ntest = len(dfAgg) - ntrain
-
-    pred_y = [predict(dfAgg[i:ntrain + ntest + i], ntrain, ntest) for i in range(0, len(dfAgg) - ntrain, ntest)]
-    pred_y = pd.DataFrame(pred_y[0][1].T)
-
-    pred_y.index = dfAgg[ntrain:].index
-    pred_y.to_csv('pred_y_rf_daily.csv', sep = ',')
-
-    dfAgg = dfAgg[598 - 450 - 100 + 1:]
-    ntrain = 450
-    ntest = 100
-
-    pos_y = [position(predict(dfAgg[i:ntrain + ntest + i], ntrain, ntest)) for i in range(0, len(dfAgg) - ntrain - ntest, 1)]
-    pd.DataFrame(pos_y).to_csv('pos_y_rf_daily.csv', sep = ',')
+    # # set logging
+    # setLogging(LOGGING_DIRECTORY = os.path.join(path, 'logs', dt.today().strftime('%Y-%m-%d')),
+    #            LOG_FILE_NAME = LOG_FILE_NAME,
+    #            level = 'INFO')
 
 
+    # --------------------------------------------------------------------------------------------------
+    #
+    try:
+
+        # load SMA activity data
+        dfSpy = fnLoadActivityFeed(ticker='SPY')
+        dfFutures = fnLoadActivityFeed(ticker='ES_F')
+
+        # aggregate activity feed data
+        dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
+
+        nTrain = 464
+        nTest = len(dfAgg) - nTrain
+
+        # --------------------------------------------------------------------------------------------------
+        # make predictions (y)
+
+        predictionsY = [predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest) for i in range(0, len(dfAgg) - nTrain, nTest)]
+
+        # for i in range(0, len(dfAgg)-nTrain,nTest):
+            # print(dfAgg[i:nTrain + nTest + i])
 
 
-    print('----- END PROGRAM -----')
+        predictionsY = pd.DataFrame(predictionsY[0][1].T)
+
+        predictionsY.index = dfAgg[nTrain:].index
+        predictionsY.to_csv('pred_y_rf_daily.csv', sep = ',')
+
+
+        # --------------------------------------------------------------------------------------------------
+        # calculate position based of predictions
+
+        # todo:
+        # not sure why we filter out dates prior to 2015-10-27
+        dfAgg = dfAgg[598 - 450 - 100 + 1:]
+        nTrain = 450
+        nTest = 100
+
+        testIndex = dfAgg.loc[dfAgg.index >= '2018-01-02'].index
+        dfPos = pd.DataFrame(data = [], index = testIndex, columns = ['position'])
+
+
+        positionsY = [
+                position(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), positionRecord = dfPos)
+                for i in range(0, len(dfAgg) - nTrain - nTest, 1)
+        ]
+
+        # positionsY = position(predict(dfAgg, nTrain, nTest), positionRecord = dfPos)
+
+
+
+        # print(positionsY.shape)
+        pd.DataFrame(positionsY).to_csv('pos_y_rf_daily.csv', sep = ',')
 
 
 
@@ -411,16 +527,37 @@ if __name__ == '__main__':
 
 
 
-# def plot(df,sellpoint,buypoint,start,last):
-#    newdf=copy.deepcopy(df)
-#    l1,=plt.plot(newdf['Close'][start:last],linewidth=1)
-#    plt.legend(handles=[l1],labels=['Close Price'],loc='best')
-#    for i in sellpoint:
-#        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'rs',markersize=1.5)
-#        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
-#    for i in buypoint:
-#        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'ks',markersize=1.5)
-#        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
-#    plt.show()
-#
-# plot(df,sellpoint,buypoint,250,1000)
+
+
+
+
+
+
+    # def plot(df,sellpoint,buypoint,start,last):
+    #    newdf=copy.deepcopy(df)
+    #    l1,=plt.plot(newdf['Close'][start:last],linewidth=1)
+    #    plt.legend(handles=[l1],labels=['Close Price'],loc='best')
+    #    for i in sellpoint:
+    #        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'rs',markersize=1.5)
+    #        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
+    #    for i in buypoint:
+    #        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'ks',markersize=1.5)
+    #        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
+    #    plt.show()
+    #
+    # plot(df,sellpoint,buypoint,250,1000)
+
+
+    # --------------------------------------------------------------------------------------------------
+    # --------------------------------------------------------------------------------------------------
+    # close logger / handlers
+
+        logging.info("========== END PROGRAM ==========")
+
+    except Exception as e:
+        logging.error(str(e), exc_info=True)
+
+    # CLOSE LOGGING
+    for handler in logging.root.handlers:
+        handler.close()
+    logging.shutdown()
