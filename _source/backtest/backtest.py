@@ -1,10 +1,10 @@
 ################################################################
-# ensembling.py
-# Ensemble Methods
-# Created by Joseph Loss on 11/06/2019
+# backtest.py
 #
-# Contact: loss2@illinois.edu
-###############################################################
+# Ensemble Methods
+#
+# Created by Joseph Loss on 6/22/2020
+# --------------------------------------------------------------------------------------------------
 # Module imports
 
 import os, sys, logging
@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 
 import warnings
 warnings.simplefilter("ignore")
+
 
 # --------------------------------------------------------------------------------------------------
 # custom imports
@@ -50,7 +51,6 @@ def fnClassifyReturns(rtnBins=None, stdDevBins = None, rtn=None, rtnStdDev=None)
     else:
         stdDevBins = stdDevBins
 
-
     if rtn > (rtnStdDev * stdDevBins[0]):
         rtnClassified = 2
     elif rtn > (rtnStdDev * stdDevBins[1]):
@@ -69,22 +69,26 @@ def fnClassifyReturns(rtnBins=None, stdDevBins = None, rtn=None, rtnStdDev=None)
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
 # noinspection DuplicatedCode
-def SPY():
+def fnComputeReturns(ticker='SPY'):
 
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
 
+    # todo:
+    # dfSPY = pd.read_csv(path + "{}.csv".format(ticker))
+
     dfSPY = pd.read_csv(path + "SPY Price Data.csv")
+
     dfSPY.index = dfSPY['Date']
 
     rtnTommorrow = (dfSPY['Adj_Close'][:-1].values - dfSPY['Adj_Close'][1:]) / dfSPY['Adj_Close'][1:]
     rtnToday = (dfSPY['Adj_Close'][:-1] - dfSPY['Adj_Close'][1:].values) / dfSPY['Adj_Close'][1:].values
 
-    # type(rtnToday)
+    # compute rolling 250 day standard deviation
+    rtnStdDev = rtnToday.iloc[::-1].rolling(250).std().iloc[::-1]
+    rtnStdDev = rtnStdDev.dropna()
+    rtnStdDev = rtnStdDev[1:]
 
-    rtnStdDev=rtnToday.iloc[::-1].rolling(250).std().iloc[::-1]
-    rtnStdDev=rtnStdDev.dropna()
-    rtnStdDev=rtnStdDev[1:]
-
+    # classify returns tomorrow based on std deviation * bin
     rtnTommorrowClassified = [2 if rtnTommorrow[date] > rtnStdDev[date] * 1.0
                      else 1 if rtnTommorrow[date] > rtnStdDev[date] * 0.05
                      else 0 if rtnTommorrow[date] > rtnStdDev[date] * -0.05
@@ -94,11 +98,12 @@ def SPY():
     # rtnClassified = fnClassifyReturns(rtnBins=[2,1,0,-1,-2],stdDevBins = [1.0,0.05,-0.05,-1],rtn=rtnTommorrow, rtnStdDev = rtnStdDev)
     # rtnClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTommorrow]
 
-
     rtnTommorrowClassified = pd.DataFrame(rtnTommorrowClassified)
     rtnTommorrowClassified.index = rtnStdDev.index
     rtnTommorrowClassified.columns = ['rtnClassified']
 
+
+    # classify returns today based on std deviation * bin
     rtnTodayClassified = [2 if rtnToday[date] > rtnStdDev[date] * 1.0
                           else 1 if rtnToday[date] > rtnStdDev[date] * 0.05
                           else 0 if rtnToday[date] > rtnStdDev[date] * -0.05
@@ -197,7 +202,7 @@ def fnAggActivityFeed(df1, df2):
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
-    rtnToday, rtnTommorrow, rtnTommorrowClassified, rtnTodayClassified = SPY()
+    rtnToday, rtnTommorrow, rtnTommorrowClassified, rtnTodayClassified = fnComputeReturns(ticker='SPY')
 
     rtnStdDev = rtnToday.iloc[::-1].rolling(250).std().iloc[::-1]
     rtnStdDev = rtnStdDev.dropna()
@@ -281,7 +286,6 @@ def predict(df, nTrain, nTest):
     tmp = np.select(conditions, choices, default = X_test)
 
     X_test = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
-    # dfNew = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
 
 
     # --------------------------------------------------------------------------------------------------
@@ -327,14 +331,19 @@ def predict(df, nTrain, nTest):
     # --------------------------------------------------------------------------------------------------
     # predict in-sample and out-of-sample
 
+    # 450 predictions for y_train
     y_train_pred = RFmodel.predict(X_train_std)
+
+    # 100 predictions for y_train
     y_test_pred = RFmodel.predict(X_test_std)
 
     # print([df.index[len(df) - 1], y_test_pred])
     logging.info('Calculating %s predictions...' % df.index[len(df) - 1])
 
 
-    #
+    # --------------------------------------------------------------------------------------------------
+    # statistics
+
     # print('MSE train: %.3f, test: %.3f' % (
     #         mean_squared_error(y_train, y_train_pred),
     #         mean_squared_error(y_test, y_test_pred)))
@@ -343,9 +352,9 @@ def predict(df, nTrain, nTest):
     #         r2_score(y_train, y_train_pred),
     #         r2_score(y_test, y_test_pred)))
     #
-    # # print('accuracy train: %.3f, test: %.3f' % (
-    # #        accuracy_score(y_train, y_train_pred),
-    # #        accuracy_score(y_test, y_test_pred)))
+    # print('accuracy train: %.3f, test: %.3f' % (
+    #        accuracy_score(y_train, y_train_pred),
+    #        accuracy_score(y_test, y_test_pred)))
     #
     # print('explanined variance train: %.3f, test: %.3f' % (
     #         explained_variance_score(y_train, y_train_pred),
@@ -369,79 +378,104 @@ def firstQuantileRisk(value, q1signal):
 # --------------------------------------------------------------------------------------------------
 # determine the position based off predictionsY
 
-def position(predictionsY, positionRecord):
+def fnCreatePositions(predictionsY, positionRecord):
 
     index_y = predictionsY[0]
     predictionsY = predictionsY[1]
 
-
-    # f = open("tempsave.csv", "a")
-    # f.write("\n")
-
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
-    # print('q1:', q1signal)
-    lastsignal = predictionsY[len(predictionsY) - 1]
-    # print('pred', lastsignal)
+    print('q1 signal: %s' % q1signal.round(6))
+    lastsignal = predictionsY[-1]
+    print('last signal: %s' % lastsignal.round(6))
 
     riskToSpy = (len(predictionsY) - 1) / sum([firstQuantileRisk(n, q1signal) for n in predictionsY])
 
-    #
-    # if (lastsignal > q1signal and lastsignal > 0.000001):
-    #     print([index_y, riskToSpy])
-    #
-    # elif (lastsignal > 0.000001):
-    #     print([index_y, 0.75 * riskToSpy])
-    #
-    # elif (lastsignal > 0):
-    #     print([index_y, 0])
-    #
-    # else:
-    #     print([index_y, -1])
-
-
-
     if ((lastsignal > q1signal) & (lastsignal > 0.000001)):
-        # f.write(index_y + ',' + str(riskToSpy))
-        # f.close()
-        # position = [index_y,riskToSpy]
-        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
-        positionRecord.loc[positionRecord.index==index_y, 'position'] = riskToSpy
-
-        # positionRecord.append(position)
-        # return position
+        # positionRecord.loc[index_y] = riskToSpy
+        return [index_y, riskToSpy]
 
     elif (lastsignal > 0.000001):
-        # f.write(index_y + ',' + str(0.75 * riskToSpy))
-        # f.close()
-        positionRecord.loc[positionRecord.index==index_y, 'position'] = riskToSpy * 0.75
-        # position = riskToSpy * 0.75
+        # positionRecord.loc[index_y, 'position'] = riskToSpy * 0.75
+        return [index_y, riskToSpy * 0.75]
 
-        # positionRecord.append(position)
-        # return position
-
-    elif (lastsignal > 0):
-        # f.write(index_y + ',' + str(0))
-        # f.close()
-        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
-        # position.loc[:, 'position'] = 0.0
-        positionRecord.loc[positionRecord.index==index_y, 'position'] = 0
-
-        # position = riskToSpy * 0.0
-
-        # positionRecord.append(position)
-        # return position
+    elif (lastsignal > 0) & (lastsignal < 0.000001):
+        # positionRecord.loc[index_y, 'position'] = 0.0
+        return [index_y, 0.0]
 
     else:
-        # f.write(index_y + ',' + str(-1))
-        # f.close()
-        # position = pd.DataFrame(riskToSpy,index=[index_y],columns=['position'])
-        # position.loc[:, 'position'] = -1
-        positionRecord.loc[positionRecord.index==index_y, 'position'] = -1.0
-        # position = -1
-        # positionRecord.append(position)
+        # positionRecord.loc[index_y, 'position'] = -1.0
+        return [index_y, -1.0]
 
-        # return position
-    return positionRecord
+
+# --------------------------------------------------------------------------------------------------
+# compute portfolio returns with position sizing
+
+def fnComputePortfolioRtn(pred, pos):
+
+    pos.columns=['position']
+
+    # merge signal with position
+    dfP = pd.merge(pos, pred, how='inner', left_index=True, right_index=True)
+
+    # set to time-aware index
+    dfP.index = pd.DatetimeIndex(dfP.index)
+
+    # import SPY returns
+    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
+
+    dfU = pd.read_csv(path + "SPY Price Data.csv")
+    dfU.index = dfU['Date']
+    dfU.sort_index(inplace=True)
+
+    # merge with adjusted close price
+    dfP = dfP.merge(dfU.Adj_Close, how = 'left', left_index = True, right_index = True)
+
+    # calculate percent return
+    # dfP['rtnSPY'] = dfP['Adj_Close'].pct_change().fillna(0)
+
+    # merge percent return (including Day 0)
+    dfU['rtnSPY'] = dfU['Adj_Close'].pct_change()[1:]
+    dfP = dfP.merge(dfU.rtnSPY, how = 'left', left_index = True, right_index = True)
+
+    # calculate cumulative asset return
+    dfP['cRtn-SPY'] = ((1 + dfP['rtnSPY']).cumprod() - 1).fillna(0)
+
+
+    # calculate position using rolling quantile bin
+    dfP = fnPositionBinning(dfP, posBins=[1.0, 0.75, -1.0])
+
+    # dfP.loc[dfP.index=='2018-01-02','position']=0
+
+    # calculate cumulative portfolio return
+    dfP['rtnPort'] = dfP['position'] * dfP['rtnSPY']
+    dfP['cRtn-Port'] = (1 + dfP['rtnPort']).cumprod()-1
+
+    cols = ['signal',
+            'Adj_Close',
+            'rtnSPY',
+            'cRtn-SPY',
+            'position',
+            'rtnPort',
+            'cRtn-Port']
+    dfP = dfP[cols]
+
+    return dfP
+
+
+# --------------------------------------------------------------------------------------------------
+#  position binning
+
+def fnPositionBinning(df, posBins=[1.0, 0.75, -1.0]):
+    # if signal > 0
+    df['position'] = np.where(df.signal > 0,
+                              # if signal greater than rolling median - 0.000001
+                              np.where(df.signal > (df.signal.expanding(min_periods=1).quantile(0.5) - 0.000001),
+                                       # return 1 if True, 0.75 if False
+                                       posBins[0], posBins[1]),
+                              # if signal <0 return -1
+                              posBins[2])
+    return df
+
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
@@ -478,6 +512,7 @@ if __name__ == '__main__':
         nTrain = 464
         nTest = len(dfAgg) - nTrain
 
+
         # --------------------------------------------------------------------------------------------------
         # make predictions (y)
 
@@ -486,10 +521,11 @@ if __name__ == '__main__':
         # for i in range(0, len(dfAgg)-nTrain,nTest):
             # print(dfAgg[i:nTrain + nTest + i])
 
-
         predictionsY = pd.DataFrame(predictionsY[0][1].T)
 
         predictionsY.index = dfAgg[nTrain:].index
+        predictionsY.index.name='date'
+        predictionsY.columns=['signal']
         predictionsY.to_csv('pred_y_rf_daily.csv', sep = ',')
 
 
@@ -497,26 +533,31 @@ if __name__ == '__main__':
         # calculate position based of predictions
 
         # todo:
-        # not sure why we filter out dates prior to 2015-10-27
+        # make this adjustable
         dfAgg = dfAgg[598 - 450 - 100 + 1:]
         nTrain = 450
         nTest = 100
 
+        # todo:
+        # make this adjustable
         testIndex = dfAgg.loc[dfAgg.index >= '2018-01-02'].index
-        dfPos = pd.DataFrame(data = [], index = testIndex, columns = ['position'])
 
+        dfPos = pd.DataFrame(data = [], index = testIndex, columns = ['position'])
+        # positionsY= [fnCreatePositions(predict(dfAgg[i:nTrain+nTest+i],nTrain,nTest),dfPos) for i in range(0, len(dfAgg))]
 
         positionsY = [
-                position(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), positionRecord = dfPos)
+                fnCreatePositions(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), positionRecord = dfPos)
                 for i in range(0, len(dfAgg) - nTrain - nTest, 1)
         ]
 
-        # positionsY = position(predict(dfAgg, nTrain, nTest), positionRecord = dfPos)
+        positionsY = pd.DataFrame(positionsY,columns=['date','position'])
+        positionsY.set_index('date', inplace=True)
 
+        # compute portfolio returns using position bins
+        dfP = fnComputePortfolioRtn(predictionsY, positionsY)
 
-
-        # print(positionsY.shape)
-        pd.DataFrame(positionsY).to_csv('pos_y_rf_daily.csv', sep = ',')
+        dfP.to_csv('backtest_results.csv')
+        # positionsY.to_csv('pos_y.csv')
 
 
 
