@@ -96,12 +96,25 @@ def fnComputeReturns(ticker='SPY'):
     rtnStdDev = rtnStdDev.dropna()
     rtnStdDev = rtnStdDev[1:]
 
+    # df['rtnStdDev'] = df['rtnYesterdayToToday'].rolling(250).std()
+    # df = df.dropna()
+
     # classify returns tomorrow based on std deviation * bin
+    # df['rtnTodayToTomorrowClassified'] = None
+    #
+    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * 1.0, 'rtnTodayToTomorrowClassified'] = 2
+    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * 0.05, 'rtnTodayToTomorrowClassified'] = 1
+    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * -0.05, 'rtnTodayToTomorrowClassified'] = -1
+    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * -1.0, 'rtnTodayToTomorrowClassified'] = -2
+
+
+
+
     rtnTodayToTomorrowClassified = [2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 1.0
                      else 1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 0.05
-                     else 0 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -0.05
-                     else -1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -1.0
-                     else -2 for date in rtnStdDev.index]
+                     else -1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -0.05
+                     else -2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -1.0
+                     else 0 for date in rtnStdDev.index]
 
     # rtnTodayToTomorrowClassified = fnClassifyReturns(rtnBins=[2,1,0,-1,-2],stdDevBins = [1.0,0.05,-0.05,-1],rtn=rtnTodayToTomorrow, rtnStdDev = rtnStdDev)
     # rtnTodayToTomorrowClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTodayToTomorrow]
@@ -114,9 +127,9 @@ def fnComputeReturns(ticker='SPY'):
     # classify returns today based on std deviation * bin
     rtnYesterdayToTodayClassified = [2 if rtnYesterdayToToday[date] > rtnStdDev[date] * 1.0
                           else 1 if rtnYesterdayToToday[date] > rtnStdDev[date] * 0.05
-                          else 0 if rtnYesterdayToToday[date] > rtnStdDev[date] * -0.05
-                          else -1 if rtnYesterdayToToday[date] > rtnStdDev[date] * -1.0
-                          else -2 for date in rtnStdDev.index]
+                          else -1 if rtnYesterdayToToday[date] > rtnStdDev[date] * -0.05
+                          else -2 if rtnYesterdayToToday[date] > rtnStdDev[date] * -1.0
+                          else 0 for date in rtnStdDev.index]
 
     # rtnTodayToTomorrowClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTodayToTomorrow]
 
@@ -334,7 +347,7 @@ def predict(df, nTrain, nTest):
 
     sc_X = StandardScaler()
     X_train_std = sc_X.fit_transform(X_train)
-    X_test_std = sc_X.transform(X_test)
+    X_test_std = sc_X.fit_transform(X_test)
 
     y_train = np.array(y_train).reshape(-1, 1)
     y_test = np.array(y_test).reshape(-1, 1)
@@ -363,8 +376,11 @@ def predict(df, nTrain, nTest):
     best_leaf_nodes = 2
     best_n = 401
 
-    RFmodel = RandomForestRegressor(n_estimators = best_n, max_leaf_nodes = best_leaf_nodes, n_jobs = -1)
-    # RFmodel = RandomForestClassifier(n_estimators = best_n,max_leaf_nodes=best_leaf_nodes,n_jobs=-1)
+    RFmodel = RandomForestRegressor(criterion='mse',
+                                    max_features="auto",
+                                    n_estimators=best_n,
+                                    max_leaf_nodes=best_leaf_nodes,
+                                    n_jobs=-1)
 
     RFmodel.fit(X_train_std, y_train)
 
@@ -384,15 +400,15 @@ def predict(df, nTrain, nTest):
 
     print('\n ----------------------------------------')
     print('DATE: %s' % pd.to_datetime(df.index[len(df)-1]).date())
-    print('MSE \n Train: %.3f, Test: %.3f' % (
+    print('MSE \n Train: %.6f, Test: %.6f' % (
             mean_squared_error(y_train, y_train_pred),
             mean_squared_error(y_test, y_test_pred)))
 
-    print('R^2 \n Train: %.3f, Test: %.3f' % (
+    print('R^2 \n Train: %.4f, Test: %.4f' % (
             r2_score(y_train, y_train_pred),
             r2_score(y_test, y_test_pred)))
 
-    print('Explained Variance \n Train: %.3f, Test: %.3f' % (
+    print('Explained Variance \n Train: %.4f, Test: %.4f' % (
             explained_variance_score(y_train, y_train_pred),
             explained_variance_score(y_test, y_test_pred)))
 
