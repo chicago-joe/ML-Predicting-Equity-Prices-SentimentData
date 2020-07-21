@@ -1,9 +1,18 @@
-################################################################
+# --------------------------------------------------------------------------------------------------
 # backtest.py
 #
-# Ensemble Methods
 #
-# Created by Joseph Loss on 6/22/2020
+# --------------------------------------------------------------------------------------------------
+# created by Joseph Loss on 6/22/2020
+#
+# todo:
+# Try using log prices instead of prices to see if that helps the training
+# Try adding these 3 predictors:
+# 1) vix level
+# 2) log percent change or percent change in vix from prior trading day (again don't look ahead for vix)
+# 3) Also add in log percent change from 2 prior trading days to the latest day
+
+
 # --------------------------------------------------------------------------------------------------
 # Module imports
 
@@ -66,6 +75,37 @@ def fnClassifyReturns(rtnBins=None, stdDevBins = None, rtn=None, rtnStdDev=None)
 
 
 # --------------------------------------------------------------------------------------------------
+# download VIX data from CBOE
+
+def fnGetVIXData(startDate=None, endDate=None, rtnType='log'):
+
+    # FROM cboe directly
+    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
+
+    df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
+
+    if startDate:
+        df = df.loc[df.index >= startDate]
+    if endDate:
+        df = df.loc[df.index <= endDate]
+
+    df = df[['VIX Close']]
+
+
+    if rtnType.lower() == 'log':
+        df['VIX-{}-RtnTodayToTomorrow'.format(rtnType.lower())] = np.log(df['VIX Close']).diff().shift(-1)
+        df['VIX-{}-RtnYesterdayToToday'.format(rtnType.lower())] = np.log(df['VIX Close']).diff()
+        df['VIX-{}-RtnPriorTwoDays'.format(rtnType.lower())] = np.log(df['VIX Close']).diff(2)
+    else:
+        df['VIX-rtnTodayToTomorrow'] = df['VIX Close'].pct_change().shift(-1)
+        df['VIX-rtnYesterdayToToday'] = df['VIX Close'].pct_change()
+
+    df.rename(columns={'VIX Close':'VIX-Close'},inplace=True)
+
+    return df
+
+
+# --------------------------------------------------------------------------------------------------
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
 # noinspection DuplicatedCode
@@ -82,14 +122,18 @@ def fnComputeReturns(ticker='SPY'):
     df.index.name='date'
     df.sort_index(inplace=True)
 
+    ## using regular returns
+    # df['rtnTodayToTomorrow'] = df['Adj_Close'].pct_change().shift(-1)
+    # df['rtnYesterdayToToday'] = df['Adj_Close'].pct_change()
+    # rtnTodayToTomorrow = df['Adj_Close'].pct_change().shift(-1)
+    # rtnYesterdayToToday = df['Adj_Close'].pct_change()
+
+    ## using log returns
     df['rtnTodayToTomorrow'] = df['Adj_Close'].pct_change().shift(-1)
-    df['rtnYesterdayToToday'] = df['Adj_Close'].pct_change()
-
-    # rtnTodayToTomorrow = (df['Adj_Close'][:-1].values - df['Adj_Close'][1:]) / df['Adj_Close'][1:]
-    # rtnToday = (df['Adj_Close'][:-1] - df['Adj_Close'][1:].values) / df['Adj_Close'][1:].values
-
     rtnTodayToTomorrow = df['Adj_Close'].pct_change().shift(-1)
-    rtnYesterdayToToday = df['Adj_Close'].pct_change()
+
+    df['rtnYesterdayToToday'] = np.log(df['Adj_Close']).diff()
+    rtnYesterdayToToday = np.log(df['Adj_Close']).diff()
 
     # compute rolling 250 day standard deviation
     rtnStdDev = rtnYesterdayToToday.iloc[::1].rolling(250).std().iloc[::1]
@@ -99,50 +143,63 @@ def fnComputeReturns(ticker='SPY'):
     # df['rtnStdDev'] = df['rtnYesterdayToToday'].rolling(250).std()
     # df = df.dropna()
 
-    # classify returns tomorrow based on std deviation * bin
-    # df['rtnTodayToTomorrowClassified'] = None
-    #
-    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * 1.0, 'rtnTodayToTomorrowClassified'] = 2
-    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * 0.05, 'rtnTodayToTomorrowClassified'] = 1
-    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * -0.05, 'rtnTodayToTomorrowClassified'] = -1
-    # df.loc[df['rtnTodayToTomorrow'] > df['rtnStdDev'] * -1.0, 'rtnTodayToTomorrowClassified'] = -2
-
-
-
-
-    rtnTodayToTomorrowClassified = [2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 1.0
-                     else 1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 0.05
-                     else -1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -0.05
-                     else -2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -1.0
-                     else 0 for date in rtnStdDev.index]
-
-    # rtnTodayToTomorrowClassified = fnClassifyReturns(rtnBins=[2,1,0,-1,-2],stdDevBins = [1.0,0.05,-0.05,-1],rtn=rtnTodayToTomorrow, rtnStdDev = rtnStdDev)
-    # rtnTodayToTomorrowClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTodayToTomorrow]
+    # classify returns TOMORROW based on std deviation * bin
+    rtnTodayToTomorrowClassified = [
+            2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 1.0
+             else 1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 0.05
+             else -1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -0.05
+             else -2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -1.0
+             else 0 for date in rtnStdDev.index]
 
     rtnTodayToTomorrowClassified = pd.DataFrame(rtnTodayToTomorrowClassified)
     rtnTodayToTomorrowClassified.index = rtnStdDev.index
     rtnTodayToTomorrowClassified.columns = ['rtnTodayToTomorrowClassified']
 
-
-    # classify returns today based on std deviation * bin
+    # classify returns TODAY based on std deviation * bin
     rtnYesterdayToTodayClassified = [2 if rtnYesterdayToToday[date] > rtnStdDev[date] * 1.0
                           else 1 if rtnYesterdayToToday[date] > rtnStdDev[date] * 0.05
                           else -1 if rtnYesterdayToToday[date] > rtnStdDev[date] * -0.05
                           else -2 if rtnYesterdayToToday[date] > rtnStdDev[date] * -1.0
                           else 0 for date in rtnStdDev.index]
 
-    # rtnTodayToTomorrowClassified=[ 2  if ret>s2 else 1 if ret>s1 else 0 if ret>s0 else -1 if ret>sn1 else -2 for ret in rtnTodayToTomorrow]
-
     rtnYesterdayToTodayClassified = pd.DataFrame(rtnYesterdayToTodayClassified)
     rtnYesterdayToTodayClassified.index = rtnStdDev.index
     rtnYesterdayToTodayClassified.columns = ['rtnYesterdayToTodayClassified']
 
+
+    # make dataframes
     rtnTodayToTomorrow = pd.DataFrame(rtnTodayToTomorrow)
     rtnYesterdayToToday = pd.DataFrame(rtnYesterdayToToday)
     rtnTodayToTomorrow.columns = ['rtnTodayToTomorrow']
     rtnYesterdayToToday.columns = ['rtnYesterdayToToday']
 
-    return rtnYesterdayToToday, rtnTodayToTomorrow, rtnTodayToTomorrowClassified, rtnYesterdayToTodayClassified,rtnStdDev
+
+    # --------------------------------------------------------------------------------------------------
+    # log returns
+
+    # df['logRtnYesterdayToToday'] = np.log(df['Adj_Close']).diff()
+    # logRtnYesterdayToToday = np.log(df['Adj_Close']).diff()
+    # #
+    # # df['logRtnTodayToTomorrow'] = np.log(df['Adj_Close']).diff().shift(-1)
+    # # logRtnTodayToTomorrow = np.log(df['Adj_Close']).diff().shift(-1)
+    #
+    # # classify LOG returns TODAY based on std deviation * bin
+    # logRtnYesterdayToTodayClassified = [2 if logRtnYesterdayToToday[date] > rtnStdDev[date] * 1.0
+    #                       else 1 if logRtnYesterdayToToday[date] > rtnStdDev[date] * 0.05
+    #                       else -1 if logRtnYesterdayToToday[date] > rtnStdDev[date] * -0.05
+    #                       else -2 if logRtnYesterdayToToday[date] > rtnStdDev[date] * -1.0
+    #                       else 0 for date in rtnStdDev.index]
+    #
+    # logRtnYesterdayToTodayClassified = pd.DataFrame(logRtnYesterdayToTodayClassified)
+    # logRtnYesterdayToTodayClassified.index = rtnStdDev.index
+    # logRtnYesterdayToTodayClassified.columns = ['logRtnYesterdayToTodayClassified']
+    #
+    # logRtnYesterdayToToday = pd.DataFrame(logRtnYesterdayToToday)
+    # logRtnYesterdayToToday.columns = ['logRtnYesterdayToToday']
+
+
+    return rtnYesterdayToToday, rtnTodayToTomorrow, rtnTodayToTomorrowClassified, rtnYesterdayToTodayClassified, \
+           rtnStdDev #, logRtnYesterdayToToday, logRtnYesterdayToTodayClassified
 
 
 # --------------------------------------------------------------------------------------------------
@@ -233,22 +290,36 @@ def fnAggActivityFeed(df1, df2):
 
     rtnStdDev.name = 'rtnStdDev'
 
-    rtnStdDev.index.name='Date'
-    rtnTodayToTomorrow.index.name='Date'
-    rtnYesterdayToToday.index.name='Date'
-    rtnTodayToTomorrowClassified.index.name='Date'
-    rtnYesterdayToTodayClassified.index.name='Date'
+    rtnStdDev.index.name = 'Date'
+    rtnTodayToTomorrow.index.name = 'Date'
+    rtnYesterdayToToday.index.name = 'Date'
+    rtnTodayToTomorrowClassified.index.name = 'Date'
+    rtnYesterdayToTodayClassified.index.name = 'Date'
+    # logRtnYesterdayToToday.index.name = 'Date'
+    # logRtnYesterdayToTodayClassified.index.name = 'Date'
+
+    dfA.dropna(inplace = True)
+    rtnTodayToTomorrow.dropna(inplace = True)
+    rtnYesterdayToToday.dropna(inplace = True)
+    # logRtnYesterdayToToday.dropna(inplace = True)
+
+    dfAgg = pd.merge(dfA, rtnTodayToTomorrow, how = 'inner', left_index = True, right_index = True)
+    dfAgg = pd.merge(dfAgg, rtnYesterdayToToday, how = 'inner', left_index = True, right_index = True)
+    dfAgg = pd.merge(dfAgg, rtnTodayToTomorrowClassified, how = 'inner', left_index = True, right_index = True)
+    dfAgg = pd.merge(dfAgg, rtnStdDev, how = 'inner', left_index = True, right_index = True)
+    dfAgg = pd.merge(dfAgg, rtnYesterdayToTodayClassified, how = 'inner', left_index = True, right_index = True)
 
 
-    dfA.dropna(inplace=True)
-    rtnTodayToTomorrow.dropna(inplace=True)
-    rtnYesterdayToToday.dropna(inplace=True)
+    # dfAgg = pd.merge(dfAgg, logRtnYesterdayToToday, how = 'inner', left_index = True, right_index = True)
+    # dfAgg = pd.merge(dfAgg, logRtnYesterdayToTodayClassified, how = 'inner', left_index = True, right_index = True)
 
-    dfAgg = pd.merge(dfA,rtnTodayToTomorrow,how='inner',left_index=True,right_index=True)
-    dfAgg = pd.merge(dfAgg,rtnYesterdayToToday,how='inner',left_index=True,right_index=True)
-    dfAgg = pd.merge(dfAgg,rtnTodayToTomorrowClassified,how='inner',left_index=True,right_index=True)
-    dfAgg = pd.merge(dfAgg,rtnStdDev,how='inner',left_index=True,right_index=True)
-    dfAgg = pd.merge(dfAgg,rtnYesterdayToTodayClassified,how='inner',left_index=True,right_index=True)
+
+    # pull in VIX data
+    dfVIX = fnGetVIXData(startDate = dfAgg.index[0], endDate = dfAgg.index[-1], rtnType = 'log')
+    dfVIX.drop(columns=['VIX-log-RtnTodayToTomorrow'], inplace=True)
+    dfVIX.dropna(inplace=True)
+
+    dfAgg = pd.merge(dfAgg, dfVIX, how = 'inner', left_index = True, right_index = True)
 
     return dfAgg
 
@@ -352,7 +423,7 @@ def predict(df, nTrain, nTest):
     y_train = np.array(y_train).reshape(-1, 1)
     y_test = np.array(y_test).reshape(-1, 1)
 
-    #
+
     # ## Random Forests Model: Variance-Reduction Approach
     # names = X_train.columns.tolist()
     # featNames = np.array(names)
@@ -373,14 +444,17 @@ def predict(df, nTrain, nTest):
     # best_leaf_nodes = CV_forest.best_params_['max_leaf_nodes']
     # best_n = CV_forest.best_params_['n_estimators']
 
+
     best_leaf_nodes = 2
     best_n = 401
 
-    RFmodel = RandomForestRegressor(criterion='mse',
-                                    max_features="auto",
-                                    n_estimators=best_n,
-                                    max_leaf_nodes=best_leaf_nodes,
-                                    n_jobs=-1)
+    RFmodel = RandomForestRegressor(criterion = 'mse',
+                                    max_features = "auto",
+                                    n_estimators = best_n,
+                                    max_leaf_nodes = best_leaf_nodes,
+                                    # bootstrap = True,
+                                    # min_samples_leaf = 25,
+                                    n_jobs = -1)
 
     RFmodel.fit(X_train_std, y_train)
 
@@ -465,7 +539,7 @@ def firstQuantileRisk(value, q1signal):
 # --------------------------------------------------------------------------------------------------
 # determine the position based off predictionsY
 
-def fnCreatePositions(predictionsY, positionRecord):
+def fnCreatePositions(predictionsY):
 
     index_y = predictionsY[0]
     predictionsY = predictionsY[1]
@@ -590,8 +664,8 @@ if __name__ == '__main__':
         # aggregate activity feed data
         dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
 
-        nTrain=464
-        nTest=len(dfAgg)-nTrain
+        nTrain = 464
+        nTest = len(dfAgg) - nTrain
 
 
         # nTrain = len(dfAgg.loc[dfAgg.index<='2018-01-01'])
@@ -609,8 +683,8 @@ if __name__ == '__main__':
         predictionsY = pd.DataFrame(predictionsY[0][1].T)
 
         predictionsY.index = dfAgg[nTrain:].index
-        predictionsY.index.name='date'
-        predictionsY.columns=['signal']
+        predictionsY.index.name = 'date'
+        predictionsY.columns = ['signal']
         predictionsY.to_csv('pred_y_rf_daily.csv', sep = ',')
 
 
@@ -627,21 +701,21 @@ if __name__ == '__main__':
         # make this adjustable
         testIndex = dfAgg.loc[dfAgg.index >= '2018-01-02'].index
 
-        dfPos = pd.DataFrame(data = [], index = testIndex, columns = ['position'])
         # positionsY= [fnCreatePositions(predict(dfAgg[i:nTrain+nTest+i],nTrain,nTest),dfPos) for i in range(0, len(dfAgg))]
 
+
         positionsY = [
-                fnCreatePositions(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), positionRecord = dfPos)
+                fnCreatePositions(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest))
                 for i in range(0, len(dfAgg) - nTrain - nTest, 1)
         ]
 
-        positionsY = pd.DataFrame(positionsY, columns=['date','position'])
+        # create df positions
+        positionsY = pd.DataFrame(positionsY, columns = ['date', 'position'])
         positionsY.set_index('date', inplace=True)
-
         # positionsY.to_csv('pos_y.csv')
+
         # compute portfolio returns using position bins
         dfP = fnComputePortfolioRtn(predictionsY, positionsY)
-
         dfP.to_csv('backtest_results.csv')
 
 
@@ -651,27 +725,6 @@ if __name__ == '__main__':
 
 
 
-
-
-
-
-
-
-
-
-    # def plot(df,sellpoint,buypoint,start,last):
-    #    newdf=copy.deepcopy(df)
-    #    l1,=plt.plot(newdf['Close'][start:last],linewidth=1)
-    #    plt.legend(handles=[l1],labels=['Close Price'],loc='best')
-    #    for i in sellpoint:
-    #        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'rs',markersize=1.5)
-    #        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
-    #    for i in buypoint:
-    #        plt.plot(newdf.iloc[i,:].name,newdf['Close'][i],'ks',markersize=1.5)
-    #        plt.annotate(str(newdf['Close'][i])[:5],xy=(newdf.iloc[i,:].name,newdf['Close'][i]),xytext=(newdf.iloc[i,:].name,newdf['Close'][i]+0.5),weight='ultralight')
-    #    plt.show()
-    #
-    # plot(df,sellpoint,buypoint,250,1000)
 
 
     # --------------------------------------------------------------------------------------------------
