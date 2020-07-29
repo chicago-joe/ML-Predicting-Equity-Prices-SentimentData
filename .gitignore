@@ -128,3 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 _2019/
+_source/backtest/dailyPred/
+_source/sra/
