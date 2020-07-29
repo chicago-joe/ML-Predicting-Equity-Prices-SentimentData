@@ -31,7 +31,6 @@ import pylab as plot
 import warnings
 warnings.simplefilter("ignore")
 
-
 # --------------------------------------------------------------------------------------------------
 # custom imports
 
@@ -39,6 +38,7 @@ from fnCommon import setPandas, setLogging, setOutputFile
 LOG_FILE_NAME = os.path.basename(__file__)
 
 
+# --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # download VIX data from CBOE
 
@@ -87,6 +87,8 @@ def fnComputeReturns(df, colPrc='Adj_Close', retType = 'simple'):
 # --------------------------------------------------------------------------------------------------
 # classify simple or log returns
 
+# todo:
+# Edit classification bins
 def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['{}-rtnYesterdayToToday'.format(retType)].iloc[::1].rolling(250).std().iloc[::1]
@@ -118,15 +120,15 @@ def fnLoadPriceData(ticker='SPY'):
     df.index.name = 'date'
     df.sort_index(inplace = True)
 
-
+    # compute returns
     df = fnComputeReturns(df, 'Adj_Close', retType = 'simple')
     dfR = fnComputeReturns(df, 'Adj_Close', retType = 'log')
 
+    # classify returns
     dfC = fnClassifyReturns(dfR, retType = 'simple')
     dfT = fnClassifyReturns(dfC, retType = 'log')
 
-
-
+    # compute std deviation from simple returns
     rtnStdDev = dfT['simple-rtnYesterdayToToday'].iloc[::1].rolling(250).std().iloc[::1]
     rtnStdDev.dropna(inplace=True)
 
@@ -179,22 +181,13 @@ def fnLoadPriceData(ticker='SPY'):
     # logRtnYesterdayToToday = pd.DataFrame(logRtnYesterdayToToday)
     # logRtnYesterdayToToday.columns = ['logRtnYesterdayToToday']
 
-    colsDrop = ['Date',
-                'Open',
-                'High',
-                'Low',
-                'Close',
-                'Volume',
-                'Dividend',
-                'Split',
-                'Adj_Open',
-                'Adj_High',
-                'Adj_Low',
-                'Adj_Close',
-                'Adj_Volume', ]
 
-    dfT.drop(columns=colsDrop, inplace=True)
-    dfT.dropna(inplace=True)
+    colsDrop = ['Date', 'Open', 'High', 'Low', 'Close',
+                'Volume', 'Dividend', 'Split', 'Adj_Open', 'Adj_High',
+                'Adj_Low', 'Adj_Close', 'Adj_Volume', ]
+
+    dfT.drop(columns = colsDrop, inplace = True)
+    dfT.dropna(inplace = True)
 
     return dfT, rtnTodayToTomorrow, rtnTodayToTomorrowClassified
 
@@ -290,27 +283,29 @@ def fnAggActivityFeed(df1, df2):
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrow, how = 'inner', left_index = True, right_index = True)
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrowClassified, how = 'inner', left_index = True, right_index = True)
 
-
     # pull in VIX data
     dfVIX = fnGetVIXData(startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
-    dfVIX.rename(columns={'simple-rtnYesterdayToToday':'VIX-simple-rtnYesterdayToToday',
-                          'simple-rtnPriorTwoDays':'VIX-simple-rtnPriorTwoDays'},
-                 inplace=True)
-    #
-    # dfVIX.drop(columns=['VIX-log-rtnTodayToTomorrow'], inplace=True)
-    dfVIX.dropna(inplace=True)
-    #
+
+    dfVIX.rename(columns = { 'simple-rtnYesterdayToToday':'VIX-simple-rtnYesterdayToToday',
+                             'simple-rtnPriorTwoDays':    'VIX-simple-rtnPriorTwoDays' }, inplace=True)
+    dfVIX.dropna(inplace = True)
+
+    # merge current features with VIX features
     dfAgg = pd.merge(dfAgg, dfVIX, how = 'inner', left_index = True, right_index = True)
 
-    dfAgg.drop(columns=[
-               'simple-rtnYesterdayToToday', 'simple-rtnPriorTwoDays',
-                        # 'log-rtnYesterdayToTodayClassified',
-                        'VIX-simple-rtnYesterdayToToday',
-                        'VIX-simple-rtnPriorTwoDays'
-                        # ,'VIX-log-rtnYesterdayToToday',
-                        # 'VIX-log-rtnPriorTwoDays'
+    # drop collinear features
+    dfAgg.drop(columns = [
+            'simple-rtnYesterdayToToday',
+            'simple-rtnPriorTwoDays',
+            # 'log-rtnYesterdayToTodayClassified',
+            'simple-rtnYesterdayToTodayClassified',
+            # 'VIX-simple-rtnYesterdayToToday',
+            'VIX-simple-rtnPriorTwoDays',
+            'VIX-log-rtnYesterdayToToday',
+            'VIX-log-rtnPriorTwoDays'
     ],
-               inplace=True)
+            inplace = True)
+
 
     return dfAgg
 
@@ -416,7 +411,10 @@ def predict(df, nTrain, nTest):
     y_test = np.array(y_test).reshape(-1, 1)
 
     best_leaf_nodes = 2
-    best_n = 1000
+    best_n = 401
+
+    # todo: remove this
+    random_state = 1984
 
 
     # --------------------------------------------------------------------------------------------------
@@ -427,15 +425,12 @@ def predict(df, nTrain, nTest):
                                     n_estimators = best_n,
                                     max_leaf_nodes = best_leaf_nodes,
                                     # oob_score = True,
-                                    random_state = 1984,
+                                    random_state = random_state,
                                     n_jobs = -1)
 
     RFmodel.fit(X_train_std, y_train)
 
-
-    # --------------------------------------------------------------------------------------------------
     # predict in-sample and out-of-sample
-
     y_train_pred = RFmodel.predict(X_train_std)
     y_test_pred = RFmodel.predict(X_test_std)
 
@@ -457,6 +452,12 @@ def predict(df, nTrain, nTest):
             explained_variance_score(y_train, y_train_pred),
             explained_variance_score(y_test, y_test_pred)))
 
+
+    # current_dt = df.index[-1].strftime('%Y-%m-%d')
+    # current_pred = pd.DataFrame(y_test_pred)
+
+    # current_pred.to_csv('C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\backtest\\dailyPred\\{}.csv'.format(current_dt))
+
     return [df.index[len(df) - 1], y_test_pred]
 
 
@@ -467,13 +468,12 @@ def firstQuantileRisk(value, q1signal):
 
     # This is a rolling multiplier
     q1Risk = np.where(value > 0, np.where(value > q1signal, 1, 0.75), 2)
-
     return q1Risk
 
 # --------------------------------------------------------------------------------------------------
 # determine the position based off predictionsY
 
-def fnCreatePositions(predictionsY, signal):
+def fnCreatePositions(predictionsY, df, posBins = (1.0, 0.75, -1.0)):
     count = 0
 
     index_y = predictionsY[0]
@@ -481,54 +481,48 @@ def fnCreatePositions(predictionsY, signal):
 
 
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
-    # signal.loc[index_y, 'q1signal']= np.quantile(predictionsY, 0.25) - 0.000001
-
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
 
 
+    # signal.loc[index_y, 'q1signal']= np.quantile(predictionsY, 0.25) - 0.000001
     # q1signal = np.quantile(predictionsY).expanding(min_periods=1).quantile(0.50) - 0.000001
 
-    signal.loc[index_y, 'q1signal'] = q1signal
-    signal.loc[index_y, 'q1signalRolling'] = signal['q1signal'].expanding(min_periods=1).quantile(0.50)
+    df.loc[index_y, 'q1signal'] = q1signal
+    df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.50)
+    # df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.25) - 0.000001
 
-    q1signalROLL = signal.loc[index_y]['q1signalRolling'][-1]
-    # signal.loc[index_y, 'q1signalRolling'] = q1signalROLL
+    q1signalROLL = df.loc[index_y]['q1signalRolling'][-1]
+
+    # df.loc[index_y, 'q1signalRolling'] = q1signalROLL
 
     lastsignal = predictionsY[-1]
 
 
-    print('\n ')
-    print('Last signal: %s' % lastsignal.round(6))
-    print('Q1 signal: %s' % signal.loc[index_y, 'q1signal'].values.squeeze().astype(float).round(6))
-    print('Rolling signal: %s' % signal.loc[index_y]['q1signalRolling'][-1].astype(float).round(6))
+    # if signal > 0
+    if df.at[index_y, 'q1signal'] > 0:
+        if df.at[index_y, 'q1signal'] > df.at[index_y, 'q1signalRolling']:
+            df.at[index_y, 'position'] = 1.0
+        else:
+            df.at[index_y, 'position'] = 0.75
+    else:
+        df.at[index_y, 'position'] = -1.0
 
-    # print('Q1 signal: %s' % signal.loc[index_y, ['q1signal']].astype(float).round(6))
-    # print('Rolling signal: %s' % signal['q1signalRolling'].last().round(6))
+    # print('\n ')
+    print('Last signal: %s' % lastsignal.round(6))
+    print('Q1 signal: %s' % df.loc[index_y, 'q1signal'].values.squeeze().astype(float).round(6))
+    print('Rolling signal: %s' % df.loc[index_y]['q1signalRolling'][-1].astype(float).round(6))
+
+    # print('Q1 signal: %s' % df.loc[index_y, ['q1signal']].astype(float).round(6))
+    # print('Rolling signal: %s' % df['q1signalRolling'].last().round(6))
 
     print('\n ----------------------------------------')
 
-    count += count
-    if count > 50:
-        print('50 days')
+    # count += count
+    # if count > 50:
+    #     print('50 days')
 
 
-    riskToSpy = (len(predictionsY) - 1) / sum([firstQuantileRisk(n, q1signalROLL) for n in predictionsY])
-
-    if ((lastsignal > q1signalROLL) & (lastsignal > 0.000001)):
-        print('Risk To Spy', riskToSpy)
-        return [index_y, riskToSpy]
-
-    elif (lastsignal > 0.000001):
-        print('Risk To Spy', riskToSpy * 0.75)
-        return [index_y, riskToSpy * 0.75]
-
-    elif (lastsignal >= 0) & (lastsignal < 0.000001):
-        print('Risk To Spy', 0.0)
-        return [index_y, 0.0]
-
-    elif lastsignal < 0.0:
-        print('Risk To Spy', -1.0)
-        return [index_y, -1.0]
+    return df.loc[index_y]
 
 
 # --------------------------------------------------------------------------------------------------
@@ -632,53 +626,27 @@ if __name__ == '__main__':
         dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
 
 
-
-        # --------------------------------------------------------------------------------------------------
-        # make predictions (y)
-
-        # nTrain = 464
-        # nTest = len(dfAgg) - nTrain
-
-
-        # predictionsY = [predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest) for i in range(0, len(dfAgg) - nTrain, nTest)]
-
-        # predictionsY = pd.DataFrame(predictionsY[0][1].T)
-        # predictionsY.index = dfAgg[nTrain:].index
-
-        # predictionsY.index.name = 'date'
-        # predictionsY.columns = ['signal']
-
-        # predictionsY.to_csv('pred_y_rf_daily.csv', sep = ',')
-
-
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 
-        # todo:
-        # mention this to Adam
-        # prediction Y generated every day based on results from previous 100 days
-
         dfAgg = dfAgg[598 - 450 - 100 + 1:]
-        # nTrain = 440
+
         nTrain = 440
         nTest = 100
 
-        dfS=pd.DataFrame(index=[dfAgg[539:].index],columns=['q1signal'])
+
+        dfS = pd.DataFrame(index = [dfAgg[539:].index], columns = ['q1signal'])
 
         positionsY = [
-                fnCreatePositions(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), signal = dfS)
+                fnCreatePositions(predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest), df = dfS)
                 for i in range(0, len(dfAgg) - nTrain - nTest, 1)
         ]
 
         print('\n')
 
         # create df positions
-        # positionsY = pd.DataFrame(positionsY, columns = ['date', 'position', 'signal']).set_index('date')
         positionsY = pd.DataFrame(positionsY, columns = ['date', 'position']).set_index('date')
         positionsY.position = np.squeeze(positionsY.position).astype(float)
-        # positionsY = positionsY[['signal', 'position']]
-
-        # positionsY.to_csv('pos_y.csv')
 
 
         # --------------------------------------------------------------------------------------------------
@@ -687,6 +655,7 @@ if __name__ == '__main__':
         dfP = fnComputePortfolioRtn(positionsY)
 
         print(dfP.tail(5))
+
         dfP.to_csv('backtest_results.csv')
 
 
@@ -714,3 +683,55 @@ if __name__ == '__main__':
     for handler in logging.root.handlers:
         handler.close()
     logging.shutdown()
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # --------------------------------------------------------------------------------------------------
+        # make predictions (y)
+
+        # nTrain = 464
+        # nTest = len(dfAgg) - nTrain
+
+
+        # predictionsY = [predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest) for i in range(0, len(dfAgg) - nTrain, nTest)]
+
+        # predictionsY = pd.DataFrame(predictionsY[0][1].T)
+        # predictionsY.index = dfAgg[nTrain:].index
+
+        # predictionsY.index.name = 'date'
+        # predictionsY.columns = ['signal']
+
+        # predictionsY.to_csv('pred_y_rf_daily.csv', sep = ',')
+
+
+
+
+
+    # riskToSpy = (len(predictionsY) - 1) / sum([firstQuantileRisk(n, q1signalROLL) for n in predictionsY])
+    #
+    # if ((lastsignal > q1signalROLL) & (lastsignal > 0.000001)):
+    #     print('Risk To Spy', riskToSpy)
+    #     return [index_y, riskToSpy]
+    #
+    # elif (lastsignal > 0.000001):
+    #     print('Risk To Spy', riskToSpy * 0.75)
+    #     return [index_y, riskToSpy * 0.75]
+    #
+    # elif (lastsignal >= 0) & (lastsignal < 0.000001):
+    #     print('Risk To Spy', 0.0)
+    #     return [index_y, 0.0]
+    #
+    # elif lastsignal < 0.0:
+    #     print('Risk To Spy', -1.0)
+    #     return [index_y, -1.0]
+
