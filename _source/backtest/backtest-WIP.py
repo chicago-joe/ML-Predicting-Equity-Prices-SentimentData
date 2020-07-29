@@ -488,8 +488,8 @@ def fnCreatePositions(predictionsY, df, posBins = (1.0, 0.75, -1.0)):
     # q1signal = np.quantile(predictionsY).expanding(min_periods=1).quantile(0.50) - 0.000001
 
     df.loc[index_y, 'q1signal'] = q1signal
-    df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.50)
-    # df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.25) - 0.000001
+    # df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.50)
+    df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.25) - 0.000001
 
     q1signalROLL = df.loc[index_y]['q1signalRolling'][-1]
 
@@ -645,14 +645,40 @@ if __name__ == '__main__':
         print('\n')
 
         # create df positions
-        positionsY = pd.DataFrame(positionsY, columns = ['date', 'position']).set_index('date')
-        positionsY.position = np.squeeze(positionsY.position).astype(float)
+        # positionsY = pd.DataFrame(positionsY, columns = ['date', 'position']).set_index('date')
+        # positionsY.position = np.squeeze(positionsY.position).astype(float)
+
+
+        ind = []
+        for i, row in list(enumerate(positionsY)):
+            for i, t in list(enumerate(row.index)):
+                for i, row in enumerate(t):
+                    ind.append(row)
+                    # print(row)
+
+        tmp = pd.DataFrame(index=ind, columns = ['q1signal','q1signalRolling','position'])
+
+        q1signal = []
+        q1signalRoll = []
+        position = []
+
+        for a,b in list(enumerate(positionsY)):
+            for row in b.itertuples():
+                q1signal.append(row.q1signal)
+                q1signalRoll.append(row.q1signalRolling)
+                position.append(row.position)
+
+
+        tmp['q1signal'] = q1signal
+        tmp['q1signalRolling'] = q1signalRoll
+        tmp['position'] = position
 
 
         # --------------------------------------------------------------------------------------------------
         # compute portfolio returns using position bins
 
-        dfP = fnComputePortfolioRtn(positionsY)
+        dfP = fnComputePortfolioRtn(tmp)
+        # dfP = fnComputePortfolioRtn(positionsY)
 
         print(dfP.tail(5))
 
