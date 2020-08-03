@@ -1,3 +1,19 @@
+
+import seaborn as sns
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.feature_selection import SelectFromModel
+from sklearn.linear_model import LinearRegression, Lasso, Ridge
+from sklearn.metrics import mean_squared_error as MSE, r2_score, mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+import sklearn.model_selection
+
+
+max_n = 250
+wait_time = 0
+
+
 # --------------------------------------------------------------------------------------------------
 # backtest-WIP.py
 #
@@ -9,7 +25,6 @@
 #
 
 
-
 # --------------------------------------------------------------------------------------------------
 # Module imports
 
@@ -19,6 +34,8 @@ from pathlib import Path
 from datetime import datetime as dt
 import pandas as pd
 import numpy as np
+np.random.seed(seed=42)
+import time
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score, accuracy_score, explained_variance_score
@@ -30,6 +47,7 @@ import pylab as plot
 
 import warnings
 warnings.simplefilter("ignore")
+
 
 # --------------------------------------------------------------------------------------------------
 # custom imports
@@ -59,7 +77,7 @@ def fnGetVIXData(startDate=None, endDate=None):
     df = fnComputeReturns(df, 'VIX Close', retType = 'simple')
     df = fnComputeReturns(df, 'VIX Close', retType = 'log')
 
-    df.drop(columns=['VIX Close'],inplace=True)
+    # df.drop(columns=['VIX Close'],inplace=True)
     df.rename(columns={'log-rtnYesterdayToToday':'VIX-log-rtnYesterdayToToday', 'log-rtnPriorTwoDays':'VIX-log-rtnPriorTwoDays',},inplace=True)
 
     return df
@@ -96,12 +114,20 @@ def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['rtnStdDev'][1:]
 
+    df.dropna(inplace=True)
+
     # classify returns TODAY based on std deviation * bin
     df['{}-rtnYesterdayToTodayClassified'.format(retType)] = [2 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * 1.0
                           else 1 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * 0.05
-                          else -1 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * -0.05
-                          else -2 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * -1.0
+                          else -1 if df['{}-rtnYesterdayToToday'.format(retType)][date] < df['rtnStdDev'][date] * -0.05
+                          else -2 if df['{}-rtnYesterdayToToday'.format(retType)][date] < df['rtnStdDev'][date] * -1.0
                           else 0 for date in df['rtnStdDev'].index]
+
+    # df['{}-rtnPriorTwoDaysClassified'.format(retType)] = [2 if df['{}-rtnPriorTwoDays'.format(retType)][date] >= df['rtnStdDev'][date] * 1.0
+    #                       else 1 if df['{}-rtnPriorTwoDays'.format(retType)][date] >= df['rtnStdDev'][date] * 0.05
+    #                       else -1 if df['{}-rtnPriorTwoDays'.format(retType)][date] <= df['rtnStdDev'][date] * -0.05
+    #                       else -2 if df['{}-rtnPriorTwoDays'.format(retType)][date] <= df['rtnStdDev'][date] * -1.0
+    #                       else 0 for date in df['rtnStdDev'].index]
 
     return df
 
@@ -144,8 +170,8 @@ def fnLoadPriceData(ticker='SPY'):
     rtnTodayToTomorrowClassified = [
             2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 1.0
             else 1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * 0.05
-            else -1 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -0.05
-            else -2 if rtnTodayToTomorrow[date] > rtnStdDev[date] * -1.0
+            else -1 if rtnTodayToTomorrow[date] < rtnStdDev[date] * -0.05
+            else -2 if rtnTodayToTomorrow[date] < rtnStdDev[date] * -1.0
             else 0 for date in rtnStdDev.index]
 
 
@@ -199,9 +225,9 @@ def fnLoadActivityFeed(ticker='SPY'):
 
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\activityFeed\\'
 
-    colNames = ['ticker', 'date', 'description', 'sector', 
-                'industry', 'raw_s', 's-volume', 's-dispersion', 
-                'raw-s-delta', 'volume-delta', 'center-date', 
+    colNames = ['ticker', 'date', 'description', 'sector',
+                'industry', 'raw_s', 's-volume', 's-dispersion',
+                'raw-s-delta', 'volume-delta', 'center-date',
                 'center-time', 'center-time-zone']
 
     dfSpy2015 = pd.read_csv(path + '{}2015.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
@@ -215,23 +241,23 @@ def fnLoadActivityFeed(ticker='SPY'):
     df_temp = df_temp.append(dfSpy2017, ignore_index = True)
     df_temp = df_temp.append(dfSpy2018, ignore_index = True)
     df_temp = df_temp.append(dfSpy2019, ignore_index = True)
-    
+
     df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
     df_datetime.columns = ['Date', 'Time']
-    
+
     # merge datetime and aggregate dataframe
     dfAgg = pd.merge(df_temp, df_datetime, left_index = True, right_index = True)
-    
+
     # filtering based on trading hours and excluding weekends
     dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
     dfAgg = dfAgg.loc[(dfAgg['Date'].dt.dayofweek != 5) & (dfAgg['Date'].dt.dayofweek != 6)]
     dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
-    
+
     # exclude weekends and drop empty columns
     dfAgg = dfAgg.dropna(axis = 'columns')
-    dfAgg = dfAgg.drop(columns = ['ticker', 'date', 'description', 'center-date', 
+    dfAgg = dfAgg.drop(columns = ['ticker', 'date', 'description', 'center-date',
                             'center-time', 'center-time-zone', 'raw-s-delta', 'volume-delta'])
-    
+
     # compute volume-base-s and ewm-volume-base-s
     dfAgg["volume_base_s"] = dfAgg["raw_s"] / dfAgg["s-volume"]
     dfAgg["ewm_volume_base_s"] = dfAgg.groupby("Date")["volume_base_s"].apply(lambda x:x.ewm(span = 390).mean())
@@ -244,17 +270,17 @@ def fnLoadActivityFeed(ticker='SPY'):
     dfT["mean_volume_base_s"] = dfAgg.groupby("Date")["volume_base_s"].mean()
     dfT["mean_raw_s"] = dfAgg.groupby("Date")["raw_s"].mean()
     dfT["mean_s_dispersion"] = dfAgg.groupby("Date")["s-dispersion"].mean()
-    
+
     if ticker=='SPY':
         dfT['volume_base_s_z'] = (dfT['mean_volume_base_s'] - dfT['mean_volume_base_s'].rolling(26).mean()) \
                              / dfT['mean_volume_base_s'].rolling(26).std()
         dfT['s_dispersion_z'] = (dfT['mean_s_dispersion'] - dfT['mean_s_dispersion'].rolling(26).mean()) \
                             / dfT['mean_s_dispersion'].rolling(26).std()
-    
+
     elif ticker == 'ES_F':
         dfT['volume_base_s_delta']=(dfT['mean_volume_base_s'][1:]-dfT['mean_volume_base_s'][:-1].values)
         dfT['s_dispersion_delta']=(dfT['mean_s_dispersion'][1:]-dfT['mean_s_dispersion'][:-1].values)
-    
+
     dfT['raw_s_MACD_ewma12-ewma26'] = dfT["mean_raw_s"].ewm(span = 12).mean() - dfT["mean_raw_s"].ewm(span = 26).mean()
 
     dfT = dfT.drop(columns = ['Date', 'raw_s', 's-volume', 's-dispersion', 'Time', 'volume_base_s'])
@@ -297,15 +323,16 @@ def fnAggActivityFeed(df1, df2):
     dfAgg.drop(columns = [
             'simple-rtnYesterdayToToday',
             'simple-rtnPriorTwoDays',
-            # 'log-rtnYesterdayToTodayClassified',
-            'simple-rtnYesterdayToTodayClassified',
-            # 'VIX-simple-rtnYesterdayToToday',
+            # 'log-rtnYesterdayToToday',
+            # 'log-rtnPriorTwoDays',
+            'log-rtnYesterdayToTodayClassified',
+            # 'VIX Close',
+            # 'simple-rtnYesterdayToTodayClassified',
+            'VIX-simple-rtnYesterdayToToday',
             'VIX-simple-rtnPriorTwoDays',
             'VIX-log-rtnYesterdayToToday',
             'VIX-log-rtnPriorTwoDays'
-    ],
-            inplace = True)
-
+    ], inplace = True)
 
     return dfAgg
 
@@ -352,6 +379,144 @@ def stationarity(result):
 # --------------------------------------------------------------------------------------------------
 # predictions
 
+def backtest(df, nTrain, nTest):
+
+    # X = np.array(df.drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1))
+    X_train =  df[0:nTrain].drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1)
+    # X_train =  np.array(df[0:nTrain].drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1))
+    # X_test = np.array(df[nTrain:nTrain + nTest].drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1))
+    X_test = df[nTrain:nTrain + nTest].drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1)
+
+    y_train = df[0:nTrain]['rtnTodayToTomorrow']
+    y_test = df[nTrain:nTrain + nTest]['rtnTodayToTomorrow']
+    # y_test = X_test['rtnTodayToTomorrow']
+
+
+    # --------------------------------------------------------------------------------------------------
+    # winsorize / feature scaling
+
+    X_train = X_train.apply(winsorizeData, axis = 0)
+    maxTrain = X_train.max()
+    minTrain = X_train.min()
+
+    conditions = [(X_test < minTrain), (X_test > maxTrain)]
+    choices = [minTrain, maxTrain]
+    tmp = np.select(conditions, choices, default = X_test)
+
+    X_test = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
+
+
+    # --------------------------------------------------------------------------------------------------
+    # test for stationarity
+
+    stationarityResults = (stationarity(X_train))
+
+    stationarityResults = pd.DataFrame(stationarityResults, index = [0])
+    stationaryFactors = []
+    logFactors=[]
+
+    for i in stationarityResults.columns:
+        if stationarityResults[i][0] == 1:
+            stationaryFactors.append(i)
+        if stationarityResults[i][0] != 1:
+            logFactors.append(i)
+
+    # stationaryFactors.remove("rtnTodayToTomorrowClassified")
+    # stationaryFactors.remove("rtnTodayToTomorrow")
+
+    # logging.debug('Final Stationary Factors:\n%s' % pd.Series(stationaryFactors))
+
+    X_train[logFactors]=np.log(X_train[logFactors]).diff().bfill()
+    X_train = X_train[logFactors + stationaryFactors]
+    X_test[logFactors]=np.log(X_test[logFactors]).diff().bfill()
+    X_test = X_test[logFactors + stationaryFactors]
+
+
+    # --------------------------------------------------------------------------------------------------
+    # Preprocess / Standardize data
+
+
+    # y = np.array(df['rtnTodayToTomorrow'])
+    sc_x = StandardScaler()
+    sc_y = StandardScaler()
+
+    X_train_std=sc_x.fit_transform(np.array(X_train))
+    X_test_std=sc_x.fit_transform(np.array(X_test))
+
+    y_train_std=sc_y.fit_transform(np.array(y_train[:,np.newaxis])).flatten()
+    y_test_std=sc_y.fit_transform(np.array(y_test[:,np.newaxis])).flatten()
+    # X_train, X_test, y_train, y_test = train_test_split(X_std, y_std, test_size = 0.1, random_state = 42)
+
+
+    rf = RandomForestRegressor(n_estimators = 500, n_jobs = -1,random_state = 42)
+    rf.fit(X_train_std,y_train_std)
+    importances = rf.feature_importances_
+
+    feat_labels = df.drop(['rtnTodayToTomorrow','rtnTodayToTomorrowClassified'],1).columns
+    indices = np.argsort(importances)[::-1]
+
+
+    # print("3MO FWD RATE - Feature Importance")
+    # for f in range(X_train.shape[1]):
+    #     print("%2d) %-*s %f" % (f + 1, 30, feat_labels[indices[f]], importances[indices[f]]))
+
+    # print('\n')
+    # plt.title('Feature Importance PCT 3MO FWD')
+    # plt.bar(range(X_train.shape[1]), importances[indices], align = 'center')
+    # plt.xticks(range(X_train.shape[1]), feat_labels[indices], rotation = 90)
+    # plt.xlim([-1, X_train.shape[1]])
+    # plt.show()
+
+    # Selection
+    # model = SelectFromModel(rf, prefit = True)
+    # X_train = model.transform(X_train_std)
+    # X_test = model.transform(X_test_std)
+    # print(X_test.shape)
+    # print(X_train.shape)
+
+    gbr = GradientBoostingRegressor(max_features = 4, learning_rate = 0.1, n_estimators = 500,
+                                subsample = 0.3, random_state = 42)
+    gbr.fit(X_train_std, y_train_std)
+    # Predict the test set labels
+    y_train_pred = rf.predict(X_train_std)
+    y_test_pred = rf.predict(X_test_std)
+
+    # plt.scatter(y_train_pred, y_train_pred - y_train,
+    #         c = 'steelblue', marker = 'o', edgecolor = 'white',
+    #         label = 'Training data')
+    # plt.scatter(y_test_pred, y_test_pred - y_test,
+    #             c = 'limegreen', marker = 's', edgecolor = 'white',
+    #             label = 'Test data')
+    # plt.xlabel('Predicted values')
+    # plt.ylabel('Residuals')
+    # plt.legend(loc = 'upper left')
+    # plt.hlines(y = 0, xmin = 0, xmax =1, color = 'black', lw = 2)
+    # plt.xlim([0, 1])
+    # plt.savefig('LinearRegression.png', dpi = 300)
+    # plt.show()
+
+
+    print('\n\n----------------------------------------')
+    print('DATE: %s' % pd.to_datetime(df.index[len(df)-1]).date())
+
+    print('\nMSE \n Train: %.6f, Test: %.6f' % (
+            mean_squared_error(y_train_std, y_train_pred),
+            mean_squared_error(y_test_std, y_test_pred)))
+
+    print('R^2 \n Train: %.4f, Test: %.4f' % (
+            r2_score(y_train_std, y_train_pred),
+            r2_score(y_test_std, y_test_pred)))
+
+    print('Explained Variance \n Train: %.4f, Test: %.4f' % (
+            explained_variance_score(y_train_std, y_train_pred),
+            explained_variance_score(y_test_std, y_test_pred)))
+
+    return [df.index[len(df) - 1], y_test_pred]
+
+
+# --------------------------------------------------------------------------------------------------
+# predict
+
 def predict(df, nTrain, nTest):
 
     X_train = df[0:nTrain]
@@ -386,18 +551,23 @@ def predict(df, nTrain, nTest):
 
     stationarityResults = pd.DataFrame(stationarityResults, index = [0])
     stationaryFactors = []
+    logFactors=[]
 
     for i in stationarityResults.columns:
         if stationarityResults[i][0] == 1:
             stationaryFactors.append(i)
+        if stationarityResults[i][0] != 1:
+            logFactors.append(i)
 
     stationaryFactors.remove("rtnTodayToTomorrowClassified")
     stationaryFactors.remove("rtnTodayToTomorrow")
 
     # logging.debug('Final Stationary Factors:\n%s' % pd.Series(stationaryFactors))
 
-    X_train = X_train[stationaryFactors]
-    X_test = X_test[stationaryFactors]
+    # X_train[logFactors]=np.log(X_train[logFactors]).diff().fillna(method='bfill').squeeze()
+    # X_train = X_train[logFactors + stationaryFactors]
+    # X_test[logFactors]=np.log(X_test[logFactors]).diff().fillna(method='bfill').squeeze()
+    # X_test = X_test[logFactors + stationaryFactors]
 
 
     # --------------------------------------------------------------------------------------------------
@@ -406,29 +576,79 @@ def predict(df, nTrain, nTest):
     sc_X = StandardScaler()
     X_train_std = sc_X.fit_transform(X_train)
     X_test_std = sc_X.fit_transform(X_test)
+    # X_train_std = X_train
+    # X_test_std = X_test
 
     y_train = np.array(y_train).reshape(-1, 1)
     y_test = np.array(y_test).reshape(-1, 1)
-
-    best_leaf_nodes = 2
-    best_n = 401
-
-    # todo: remove this
-    random_state = 1984
-
 
     # --------------------------------------------------------------------------------------------------
     # init random forest
 
     RFmodel = RandomForestRegressor(criterion = 'mse',
                                     max_features = "auto",
-                                    n_estimators = best_n,
-                                    max_leaf_nodes = best_leaf_nodes,
+                                    n_estimators = max_n,
+                                    # max_leaf_nodes = 2,
                                     # oob_score = True,
-                                    random_state = random_state,
+                                    # max_depth=10,
+                                    min_samples_leaf = 100,
+                                    random_state = 42,
                                     n_jobs = -1)
 
     RFmodel.fit(X_train_std, y_train)
+
+    # importances = RFmodel.feature_importances_
+
+    # feat_labels = df.drop(['rtnTodayToTomorrow','rtnTodayToTomorrowClassified'],1).columns
+    # indices = np.argsort(importances)[::-1]
+
+
+    # print("3MO FWD RATE - Feature Importance")
+    # for f in range(X_train.shape[1]):
+    #     print("%2d) %-*s %f" % (f + 1, 30, feat_labels[indices[f]], importances[indices[f]]))
+
+    # print('\n')
+    # plt.title('Feature Importance PCT 3MO FWD')
+    # plt.bar(range(X_train.shape[1]), importances[indices], align = 'center')
+    # plt.xticks(range(X_train.shape[1]), feat_labels[indices], rotation = 90)
+    # plt.xlim([-1, X_train.shape[1]])
+    # plt.show()
+
+    # Selection
+    # model = SelectFromModel(rf, prefit = True)
+    # X_train = model.transform(X_train_std)
+    # X_test = model.transform(X_test_std)
+    # print(X_test.shape)
+    # print(X_train.shape)
+
+    # gbr = GradientBoostingRegressor(max_features = 4, learning_rate = 0.1, n_estimators = 500,
+    #                             subsample = 0.3, random_state = 42)
+    # gbr.fit(X_train_std, y_train_std)
+    # Predict the test set labels
+    # y_train_pred = rf.predict(X_train_std)
+    # y_test_pred = rf.predict(X_test_std)
+
+    # plt.scatter(y_train_pred, y_train_pred - y_train,
+    #         c = 'steelblue', marker = 'o', edgecolor = 'white',
+    #         label = 'Training data')
+    # plt.scatter(y_test_pred, y_test_pred - y_test,
+    #             c = 'limegreen', marker = 's', edgecolor = 'white',
+    #             label = 'Test data')
+    # plt.xlabel('Predicted values')
+    # plt.ylabel('Residuals')
+    # plt.legend(loc = 'upper left')
+    # plt.hlines(y = 0, xmin = 0, xmax =1, color = 'black', lw = 2)
+    # plt.xlim([0, 1])
+    # plt.savefig('LinearRegression.png', dpi = 300)
+    # plt.show()
+
+    # sc_X = StandardScaler()
+    # X_train_std = sc_X.fit_transform(X_train)
+    # X_test_std = sc_X.fit_transform(X_test)
+    #
+    # y_train = np.array(y_train).reshape(-1, 1)
+    # y_test = np.array(y_test).reshape(-1, 1)
+
 
     # predict in-sample and out-of-sample
     y_train_pred = RFmodel.predict(X_train_std)
@@ -438,9 +658,10 @@ def predict(df, nTrain, nTest):
     # --------------------------------------------------------------------------------------------------
     # statistics
 
-    print('\n ----------------------------------------')
+    print('\n\n----------------------------------------')
     print('DATE: %s' % pd.to_datetime(df.index[len(df)-1]).date())
-    print('MSE \n Train: %.6f, Test: %.6f' % (
+
+    print('\nMSE \n Train: %.6f, Test: %.6f' % (
             mean_squared_error(y_train, y_train_pred),
             mean_squared_error(y_test, y_test_pred)))
 
@@ -479,48 +700,32 @@ def fnCreatePositions(predictionsY, df, posBins = (1.0, 0.75, -1.0)):
     index_y = predictionsY[0]
     predictionsY = predictionsY[1]
 
-
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
-
-
-    # signal.loc[index_y, 'q1signal']= np.quantile(predictionsY, 0.25) - 0.000001
-    # q1signal = np.quantile(predictionsY).expanding(min_periods=1).quantile(0.50) - 0.000001
-
     df.loc[index_y, 'q1signal'] = q1signal
-    # df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.50)
-    df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods=1).quantile(0.25) - 0.000001
-
-    q1signalROLL = df.loc[index_y]['q1signalRolling'][-1]
-
-    # df.loc[index_y, 'q1signalRolling'] = q1signalROLL
+    df.loc[index_y, 'q1signalRolling'] = df['q1signal'].expanding(min_periods = 1).quantile(0.5) - 0.000001
 
     lastsignal = predictionsY[-1]
-
+    df.loc[index_y, 'lastsignal'] = lastsignal
 
     # if signal > 0
-    if df.at[index_y, 'q1signal'] > 0:
-        if df.at[index_y, 'q1signal'] > df.at[index_y, 'q1signalRolling']:
-            df.at[index_y, 'position'] = 1.0
-        else:
-            df.at[index_y, 'position'] = 0.75
+    if (lastsignal > 0.0001) & (lastsignal > q1signal):
+        df.at[index_y, 'position'] = 1.0
+    elif lastsignal > 0.0001:
+        df.at[index_y, 'position'] = 0.75
+    elif lastsignal > 0.0:
+        df.at[index_y, 'position'] = 0
     else:
-        df.at[index_y, 'position'] = -1.0
+        df.at[index_y, 'position'] = -1
 
-    # print('\n ')
-    print('Last signal: %s' % lastsignal.round(6))
-    print('Q1 signal: %s' % df.loc[index_y, 'q1signal'].values.squeeze().astype(float).round(6))
-    print('Rolling signal: %s' % df.loc[index_y]['q1signalRolling'][-1].astype(float).round(6))
 
-    # print('Q1 signal: %s' % df.loc[index_y, ['q1signal']].astype(float).round(6))
-    # print('Rolling signal: %s' % df['q1signalRolling'].last().round(6))
+    print(' ')
+    print('Last signal:\t%.6f' % df.loc[index_y, 'lastsignal'].values.squeeze().astype(float))
+    print('Q1 signal:\t\t %.6f' % df.loc[index_y, 'q1signal'].values.squeeze().astype(float))
+    print('Rolling signal:\t %.6f' % df.loc[index_y]['q1signalRolling'][-1].astype(float))
+    print('\nCurrent Position: %s' % df.loc[index_y][['position']].values.squeeze().astype(float).round(2))
 
-    print('\n ----------------------------------------')
-
-    # count += count
-    # if count > 50:
-    #     print('50 days')
-
+    time.sleep(wait_time)
 
     return df.loc[index_y]
 
@@ -532,13 +737,6 @@ def fnComputePortfolioRtn(pos):
 
     dfP = pos.copy()
 
-    # pos.columns=['position']
-
-    # merge signal with position
-    # dfP = pd.DataFrame(pos, columns=['position'])
-
-    # dfP = pd.merge(pos, pred, how='inner', left_index=True, right_index=True)
-
     # set to time-aware index
     dfP.index = pd.DatetimeIndex(dfP.index)
 
@@ -546,35 +744,42 @@ def fnComputePortfolioRtn(pos):
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
 
     dfU = pd.read_csv(path + "SPY Price Data.csv")
+
     dfU.index = dfU['Date']
     dfU.sort_index(inplace=True)
 
-    # merge with adjusted close price
-    dfP = dfP.merge(dfU.Adj_Close, how = 'left', left_index = True, right_index = True)
-
-    # merge percent return (including Day 0)
-    dfU['rtnSPY'] = dfU['Adj_Close'].shift(-1).pct_change()[1:]
-    dfP = dfP.merge(dfU.rtnSPY, how = 'left', left_index = True, right_index = True)
+    dfU['rtnSPY'] = dfU['Adj_Close'].pct_change().shift(-1)
+    dfU.index = pd.DatetimeIndex(dfU.index)
+    dfP = dfP.merge(dfU[['Adj_Close','rtnSPY']], how = 'left', left_index = True, right_index = True)
 
     # calculate cumulative asset return
     dfP['cRtn-SPY'] = ((1 + dfP['rtnSPY']).cumprod() - 1).fillna(0)
-
-    # calculate position using rolling quantile bin
-    dfP = fnPositionBinning(dfP, posBins=[1.0, 0.75, -1.0])
 
     # calculate cumulative portfolio return
     dfP['rtnPort'] = dfP['position'] * dfP['rtnSPY']
     dfP['cRtn-Port'] = (1 + dfP['rtnPort']).cumprod()-1
 
-    cols = ['signal',
-            'Adj_Close',
-            'rtnSPY',
-            'cRtn-SPY',
-            'position',
-            'rtnPort',
-            'cRtn-Port']
+    # todo:
+    # xlsx formatting here
 
-    dfP = dfP[cols]
+    # cols = ['signal',
+    #         'Adj_Close',
+    #         'rtnSPY',
+    #         'cRtn-SPY',
+    #         'position',
+    #         'rtnPort',
+    #         'cRtn-Port']
+    #
+    # dfP = dfP[cols]
+
+
+    print('\n\n----------------------------------------')
+    print('----------------------------------------')
+    print('Starting Portfolio:\n%s' % dfP.head(5))
+    print('\n')
+    print('Ending Portfolio:\n%s' % dfP.tail(5))
+
+    dfP.to_csv('backtest_results.csv')
 
     return dfP
 
@@ -596,6 +801,55 @@ def fnPositionBinning(df, posBins=[1.0, 0.75, -1.0]):
                               # if signal <0 return -1
                               posBins[2])
     return df
+
+
+# --------------------------------------------------------------------------------------------------
+# plot feature importances and pred vs residual values
+
+def fnPlotFeatureImportance(model=None, x_train=None):
+
+    # plot Feature Importance of RandomForests model
+    names = x_train.columns.tolist()
+    featNames = np.array(names)
+
+    featureImportance = model.feature_importances_
+    featureImportance = featureImportance / featureImportance.max()    # scale by max importance
+    sorted_idx = np.argsort(featureImportance)
+    barPos = np.arange(sorted_idx.shape[0]) + 0.5
+    plot.barh(barPos, featureImportance[sorted_idx], align = 'center')      # chart formatting
+    plot.yticks(barPos, featNames[sorted_idx])
+    plot.xlabel('Variable Importance')
+    plot.show()
+
+    return
+
+
+    # --------------------------------------------------------------------------------------------------
+    # plot predicted vs residual
+    plt.scatter(y_train_pred.reshape(-1,1),
+                (y_train_pred.reshape(-1,1) - y_train.reshape(-1,1)),
+                c='steelblue',
+                edgecolors = 'white',
+                marker='o',
+                s=35,
+                alpha=0.9,
+                label='Training data')
+    plt.scatter(y_test_pred.reshape(-1,1),
+                (y_test_pred.reshape(-1,1) - y_test.reshape(-1,1)),
+                c='limegreen',
+                edgecolors = 'white',
+                marker='s',
+                s=35,
+                alpha=0.9,
+                label='Test data')
+
+    plt.xlabel('Predicted values')
+    plt.ylabel('Residuals')
+    plt.legend(loc='upper left')
+    plt.hlines(y=0, xmin=-0.075, xmax=0.075, lw=2, color='black')
+    plt.xlim([-0.075,0.075])
+    plt.show()
+
 
 
 # --------------------------------------------------------------------------------------------------
@@ -644,19 +898,13 @@ if __name__ == '__main__':
 
         print('\n')
 
-        # create df positions
-        # positionsY = pd.DataFrame(positionsY, columns = ['date', 'position']).set_index('date')
-        # positionsY.position = np.squeeze(positionsY.position).astype(float)
-
-
         ind = []
         for i, row in list(enumerate(positionsY)):
             for i, t in list(enumerate(row.index)):
                 for i, row in enumerate(t):
                     ind.append(row)
-                    # print(row)
 
-        tmp = pd.DataFrame(index=ind, columns = ['q1signal','q1signalRolling','position'])
+        tmp = pd.DataFrame(index=ind, columns = ['q1signal','lastsignal','position'])
 
         q1signal = []
         q1signalRoll = []
@@ -665,12 +913,12 @@ if __name__ == '__main__':
         for a,b in list(enumerate(positionsY)):
             for row in b.itertuples():
                 q1signal.append(row.q1signal)
-                q1signalRoll.append(row.q1signalRolling)
+                q1signalRoll.append(row.lastsignal)
                 position.append(row.position)
 
 
         tmp['q1signal'] = q1signal
-        tmp['q1signalRolling'] = q1signalRoll
+        tmp['lastsignal'] = q1signalRoll
         tmp['position'] = position
 
 
@@ -678,17 +926,12 @@ if __name__ == '__main__':
         # compute portfolio returns using position bins
 
         dfP = fnComputePortfolioRtn(tmp)
-        # dfP = fnComputePortfolioRtn(positionsY)
 
-        print(dfP.tail(5))
-
-        dfP.to_csv('backtest_results.csv')
 
 
 
         # todo:
         # plot cRet portfolio vs cRet SPY
-
 
 
 
