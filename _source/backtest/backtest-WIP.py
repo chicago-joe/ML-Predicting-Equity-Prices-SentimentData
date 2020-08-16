@@ -1,7 +1,3 @@
-max_n = 251
-wait_time = 0
-
-
 # --------------------------------------------------------------------------------------------------
 # backtest-WIP.py
 #
@@ -9,25 +5,37 @@ wait_time = 0
 # --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 6/22/2020
 
+max_n = 251
+seed = 42
+wait_time = 0
+
+# --------------------------------------------------------------------------------------------------
 # todo:
-#
+# 1. z-score of TMA strategy
+# 1a. 49 ---- 194 / 99 ---- 309 / 149
+# 2. put-call ratio
+# 3. SMA cboe index http://www.cboe.com/index/dashboard/smlcw#smlcw-overview
+
+# todo:
+# http://www.cboe.com/products/vix-index-volatility/volatility-indexes
+# 4. VIX9D, VIN and OVX --- start with these.
+# 5. Try Plain S-Score and other features from SMA (will need to add these to stationarity test before using as x-variables)
+# 6. Further time-frame tuning
 
 
 # --------------------------------------------------------------------------------------------------
 # Module imports
 
-import os, sys, logging
-import copy
-from pathlib import Path
-from datetime import datetime as dt
+import os, logging, time
 import pandas as pd
 import numpy as np
-np.random.seed(seed=42)
-import time
+np.random.seed(seed=seed)
+
+from talib import SMA
+import scipy.stats as stats
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score, accuracy_score, explained_variance_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
 from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
 import matplotlib.pyplot as plt
@@ -40,7 +48,7 @@ warnings.simplefilter("ignore")
 # --------------------------------------------------------------------------------------------------
 # custom imports
 
-from fnCommon import setPandas, setLogging, setOutputFile
+from fnCommon import setPandas
 LOG_FILE_NAME = os.path.basename(__file__)
 
 
@@ -60,12 +68,21 @@ def fnGetVIXData(startDate=None, endDate=None):
     if endDate:
         df = df.loc[df.index <= endDate]
 
-    df = df[['VIX Close']]
+    df.rename(columns={'VIX Close':'VIX_Close'}, inplace=True)
+    df = df[['VIX_Close']]
 
-    df = fnComputeReturns(df, 'VIX Close', retType = 'simple')
-    df = fnComputeReturns(df, 'VIX Close', retType = 'log')
+    # df = fnComputeReturns(df, 'VIX_Close', retType = 'simple')
 
-    df.rename(columns={'log-rtnYesterdayToToday':'VIX-log-rtnYesterdayToToday', 'log-rtnPriorTwoDays':'VIX-log-rtnPriorTwoDays',},inplace=True)
+    dfV = fnComputeReturns(df, 'VIX_Close', tPeriod = 3, retType = 'log')
+    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 2, retType = 'log'), left_index=True,right_index = True)
+    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 3, retType = 'log'), left_index=True,right_index = True)
+    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 4, retType = 'log'), left_index=True,right_index = True)
+    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 5, retType = 'log'), left_index=True,right_index = True)
+    dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 6, retType = 'log'), left_index=True, right_index = True)
+
+    dfV = dfV.add_prefix('vix-')
+
+    df = df.merge(dfV,left_index=True,right_index=True)
 
     return df
 
@@ -73,20 +90,20 @@ def fnGetVIXData(startDate=None, endDate=None):
 # --------------------------------------------------------------------------------------------------
 # compute simple or log returns
 
-def fnComputeReturns(df, colPrc='Adj_Close', retType = 'simple'):
+def fnComputeReturns(df, colPrc='Adj_Close', tPeriod = None, retType = 'simple'):
 
     if retType.lower()=='log':
-        df['{}-rtnYesterdayToToday'.format(retType)] = np.log(df[colPrc]).diff()
-        df['{}-rtnPriorTwoDays'.format(retType)] = np.log(df[colPrc]).diff(2)
+        ret = pd.Series(np.log(df[colPrc]).diff(tPeriod))
+        ret.name = '{}-rtn-{}D'.format(retType, tPeriod)
 
     elif retType.lower()=='simple':
-        df['{}-rtnYesterdayToToday'.format(retType)] = df[colPrc].pct_change()
-        df['{}-rtnPriorTwoDays'.format(retType)] = df[colPrc].pct_change(2)
+        ret = pd.Series(df[colPrc].pct_change(tPeriod))
+        ret.name = '{}-rtn-{}D'.format(retType, tPeriod)
 
     else:
         print('Please choose simple or log return type')
 
-    return df
+    return ret
 
 
 # --------------------------------------------------------------------------------------------------
@@ -96,25 +113,33 @@ def fnComputeReturns(df, colPrc='Adj_Close', retType = 'simple'):
 # Edit classification bins
 def fnClassifyReturns(df, retType = 'simple'):
 
-    df['rtnStdDev'] = df['{}-rtnYesterdayToToday'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
+    df['rtnStdDev'] = df['{}-rtn-1D'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
     df['rtnStdDev'].dropna(inplace=True)
-
-    df['rtnStdDev'] = df['rtnStdDev'][1:]
-
+    # df['rtnStdDev'] = df['rtnStdDev'][1:]
     df.dropna(inplace=True)
 
+    # --------------------------------------------------------------------------------------------------
     # classify returns TODAY based on std deviation * bin
-    df['{}-rtnYesterdayToTodayClassified'.format(retType)] = [2 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * 1.0
-                          else 1 if df['{}-rtnYesterdayToToday'.format(retType)][date] > df['rtnStdDev'][date] * 0.05
-                          else -1 if df['{}-rtnYesterdayToToday'.format(retType)][date] < df['rtnStdDev'][date] * -0.05
-                          else -2 if df['{}-rtnYesterdayToToday'.format(retType)][date] < df['rtnStdDev'][date] * -1.0
-                          else 0 for date in df['rtnStdDev'].index]
 
-    # df['{}-rtnPriorTwoDaysClassified'.format(retType)] = [2 if df['{}-rtnPriorTwoDays'.format(retType)][date] >= df['rtnStdDev'][date] * 1.0
-    #                       else 1 if df['{}-rtnPriorTwoDays'.format(retType)][date] >= df['rtnStdDev'][date] * 0.05
-    #                       else -1 if df['{}-rtnPriorTwoDays'.format(retType)][date] <= df['rtnStdDev'][date] * -0.05
-    #                       else -2 if df['{}-rtnPriorTwoDays'.format(retType)][date] <= df['rtnStdDev'][date] * -1.0
-    #                       else 0 for date in df['rtnStdDev'].index]
+    # df.loc[df['{}-rtn-1D'.format(retType)] > (df['rtnStdDev'] * 1.0),
+    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 2
+
+    # df.loc[(df['{}-rtn-1D'.format(retType)] > (df['rtnStdDev'] * 0.05)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
+    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 1
+    # df.loc[(df['{}-rtn-1D'.format(retType)] < (df['rtnStdDev'] * -0.05)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
+    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = -1
+
+    # df.loc[(df['{}-rtn-1D'.format(retType)] < (df['rtnStdDev'] * -1.0)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
+    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = -2
+
+    # df.loc[df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna(),
+    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 0
+
+    ## df['log-rtn-1DClassified'].value_counts()
+    # -1.00000    1112
+    # 1.00000      944
+    # 2.00000      443
+    # 0.00000      159
 
     return df
 
@@ -134,21 +159,54 @@ def fnLoadPriceData(ticker='SPY'):
     df.sort_index(inplace = True)
 
     # compute returns
-    df = fnComputeReturns(df, 'Adj_Close', retType = 'simple')
-    dfR = fnComputeReturns(df, 'Adj_Close', retType = 'log')
+    # df = fnComputeReturns(df, 'Adj_Close', retType = 'simple')
+    dfR = fnComputeReturns(df, 'Adj_Close', tPeriod = 1, retType = 'log')
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 4, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 5, retType = 'log'), left_index = True, right_index = True)
+    # dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 6, retType = 'log'), left_index=True,right_index = True)
+    # dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 7, retType = 'log'), left_index=True,right_index = True)
+
+    df = df.merge(dfR, left_index = True, right_index = True)
+
+
+    # --------------------------------------------------------------------------------------------------
+    # compute moving averages and rolling z-score
+
+    window = 49
+    df['ma-49D'] = SMA(df['Adj_Close'], timeperiod = window)
+    colMean = df["ma-49D"]                                  # .rolling(window = window).mean()
+    colStd = df["ma-49D"].rolling(window = window).std()
+    df["ma-49D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+
+    window = 194
+    df['ma-194D'] = SMA(df['Adj_Close'], timeperiod = window)
+    colMean = df["ma-194D"]                                 # .rolling(window = window).mean()
+    colStd = df["ma-194D"].rolling(window = window).std()
+    df["ma-194D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+
+    window = 309
+    df['ma-309D'] = SMA(df['Adj_Close'], timeperiod = window)
+    colMean = df["ma-309D"]                                 # .rolling(window = window).mean()
+    colStd = df["ma-309D"].rolling(window = window).std()
+    df["ma-309D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+
+    # df = df.merge(dfR, left_index = True, right_index = True)
 
     # classify returns
-    dfC = fnClassifyReturns(dfR, retType = 'simple')
-    dfT = fnClassifyReturns(dfC, retType = 'log')
+    dfT = fnClassifyReturns(df, retType = 'log')
 
     # compute std deviation from simple returns
-    rtnStdDev = dfT['simple-rtnYesterdayToToday'].iloc[::1].rolling(30).std().iloc[::1]
+    rtnStdDev = dfT['log-rtn-1D'].iloc[::1].rolling(30).std().iloc[::1]
     rtnStdDev.dropna(inplace=True)
 
-    dfT = dfT.loc[(dfT.index>='2015-07-23') & (dfT.index<='2019-10-31')]
 
-    rtnStdDev = rtnStdDev.loc[(rtnStdDev.index>='2015-07-23') & (rtnStdDev.index<='2019-10-31')]
+    # todo:
+    #  adjust these
 
+    dfT = dfT.loc[(dfT.index >= '2015-07-23') & (dfT.index <= '2019-10-31')]
+    rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= '2015-07-23') & (rtnStdDev.index <= '2019-10-31')]
 
     ## using regular returns to calculate target variable
     rtnTodayToTomorrow = dfT['Adj_Close'].pct_change().shift(-1)
@@ -167,7 +225,6 @@ def fnLoadPriceData(ticker='SPY'):
     rtnTodayToTomorrowClassified = pd.DataFrame(rtnTodayToTomorrowClassified)
     rtnTodayToTomorrowClassified.index = rtnStdDev.index
     rtnTodayToTomorrowClassified.columns = ['rtnTodayToTomorrowClassified']
-
 
     colsDrop = ['Date', 'Open', 'High', 'Low', 'Close',
                 'Volume', 'Dividend', 'Split', 'Adj_Open', 'Adj_High',
@@ -242,7 +299,7 @@ def fnLoadActivityFeed(ticker='SPY'):
         dfT['volume_base_s_delta']=(dfT['mean_volume_base_s'][1:]-dfT['mean_volume_base_s'][:-1].values)
         dfT['s_dispersion_delta']=(dfT['mean_s_dispersion'][1:]-dfT['mean_s_dispersion'][:-1].values)
 
-    dfT['raw_s_MACD_ewma6-ewma26'] = dfT["mean_raw_s"].ewm(span = 7).mean() - dfT["mean_raw_s"].ewm(span = 14).mean()
+    dfT['raw_s_MACD_ewma7-ewma14'] = dfT["mean_raw_s"].ewm(span = 7).mean() - dfT["mean_raw_s"].ewm(span = 14).mean()
 
     dfT = dfT.drop(columns = ['Date', 'raw_s', 's-volume', 's-dispersion', 'Time', 'volume_base_s'])
     dfT.columns = ticker + ':' + dfT.columns
@@ -272,29 +329,15 @@ def fnAggActivityFeed(df1, df2):
 
     # pull in VIX data
     dfVIX = fnGetVIXData(startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
-
-    dfVIX.rename(columns = { 'simple-rtnYesterdayToToday':'VIX-simple-rtnYesterdayToToday',
-                             'simple-rtnPriorTwoDays':    'VIX-simple-rtnPriorTwoDays' }, inplace=True)
     dfVIX.dropna(inplace = True)
 
     # merge current features with VIX features
     dfAgg = pd.merge(dfAgg, dfVIX, how = 'inner', left_index = True, right_index = True)
 
-    # drop collinear features
-    dfAgg.drop(columns = [
-            'simple-rtnYesterdayToToday',
-            'simple-rtnPriorTwoDays',
-            # 'log-rtnYesterdayToToday',
-            # 'log-rtnPriorTwoDays',
-            # 'log-rtnYesterdayToTodayClassified',
-            # 'VIX Close',
-            'simple-rtnYesterdayToTodayClassified',
-            # 'VIX-simple-rtnYesterdayToToday',
-            # 'VIX-simple-rtnPriorTwoDays',
-            'VIX-log-rtnYesterdayToToday',
-            'VIX-log-rtnPriorTwoDays'
-    ],
-            inplace = True)
+    # dfAgg.drop(columns=[
+    #         'ES_F:ewm_volume_base_s',
+    #         'SPY:raw_s_MACD_ewma7-ewma14',
+    # ],inplace=True)
 
     return dfAgg
 
@@ -342,6 +385,7 @@ def stationarity(result):
 # predict
 
 def predict(df, nTrain, nTest, dfS):
+
     X_train = df[0:nTrain]
     X_test = df[nTrain:nTrain + nTest]
 
@@ -371,32 +415,28 @@ def predict(df, nTrain, nTest, dfS):
     # test for stationarity
 
     stationarityResults = (stationarity(X_train))
-
     stationarityResults = pd.DataFrame(stationarityResults, index = [0])
     stationaryFactors = []
-    logFactors = []
 
     for i in stationarityResults.columns:
         if stationarityResults[i][0] == 1:
             stationaryFactors.append(i)
 
-    cols = [
-                'log-rtnYesterdayToTodayClassified',
-                'ES_F:volume_base_s_delta',
-                'ES_F:raw_s_MACD_ewma12-ewma26',
-                'VIX-simple-rtnYesterdayToToday',
-                'VIX-simple-rtnPriorTwoDays',
-            ]
+    # cols = [
+    #             'ES_F:volume_base_s_delta',
+    #             'ES_F:raw_s_MACD_ewma6-ewma26',
+            # ]
 
     X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
-                                             'rtnTodayToTomorrowClassified', ] + cols, axis = 1)
+                                             'rtnTodayToTomorrowClassified', ]
+                                            # + cols
+                                            ,
+                                            axis = 1)
     X_train = X_train[stationaryFactors].drop(['rtnTodayToTomorrow',
-                                               'rtnTodayToTomorrowClassified', ] + cols, axis = 1)
-
-    # logging.debug('Final Stationary Factors:\n%s' % pd.Series(stationaryFactors))
-
-    # X_train[logFactors]=np.log(X_train[logFactors]).diff().fillna(method='bfill').squeeze()
-    # X_test[logFactors]=np.log(X_test[logFactors]).diff().fillna(method='bfill').squeeze()
+                                               'rtnTodayToTomorrowClassified', ]
+                                              # + cols
+                                              ,
+                                              axis = 1)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -409,6 +449,7 @@ def predict(df, nTrain, nTest, dfS):
     y_train = np.array(y_train).reshape(-1, 1)
     y_test = np.array(y_test).reshape(-1, 1)
 
+
     # --------------------------------------------------------------------------------------------------
     # init random forest
 
@@ -419,7 +460,7 @@ def predict(df, nTrain, nTest, dfS):
                                     # oob_score = True,
                                     # max_depth=10,
                                     min_samples_leaf = 100,
-                                    random_state = 42,
+                                    random_state = seed,
                                     n_jobs = -1)
 
     RFmodel.fit(X_train_std, y_train)
@@ -454,26 +495,15 @@ def predict(df, nTrain, nTest, dfS):
 
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
-
     dfS.at[df.index[-1], 'q1signal'] = q1signal
 
-    # dfS.at[df.index[-1], 'q1signalRolling'] = dfS['q1signal'].expanding(min_periods = 1).quantile(0.5) - 0.000001
-    # dfS.at[df.index[-1], 'q1signalRolling'] = dfS['q1signal'].expanding(min_periods = 1).quantile(0.5)
-
-    # dfS.at[df.index[-1], 'q1signalRolling'] = dfS['q1signal'].rolling(window = 15).quantile(0.25)
-
-    # dfS.at[df.index[-1], 'q1signalRolling'] = dfS['q1signal'].rolling(window = 15).quantile(0.5)-0.000001
-    # dfS.at[df.index[-1], 'q1signalRolling'] = dfS['q1signal'].rolling(window = 15).quantile(0.5)
-
     lastsignal = predictionsY[-1]
-
     dfS.at[df.index[-1], 'lastsignal'] = lastsignal
-
     dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
 
 
-
-    # todo q1 signal < rolling signal = 0.75
+    # todo:
+    #  q1 signal < rolling signal = 0.75
     # if signal > 0
 
     if dfS.at[df.index[-1], 'q1signalRolling'] == 9999:
@@ -482,10 +512,13 @@ def predict(df, nTrain, nTest, dfS):
     else:
         if (lastsignal > 0.0001) & (lastsignal > q1signal) & (lastsignal < 0.001):
             dfS.at[df.index[-1], 'position'] = 1.0
+
         elif 0.001 > lastsignal > 0.0001:
             dfS.at[df.index[-1], 'position'] = 0.75
+
         elif (lastsignal > 0.001) & (dfS.at[df.index[-1], 'q1signalRolling'] < lastsignal) & (dfS.at[df.index[-1], 'q1signal'] < dfS.at[df.index[-1], 'q1signalRolling']):
             dfS.at[df.index[-1], 'position'] = -1
+
         else:
             dfS.at[df.index[-1], 'position'] = 0
 
@@ -495,7 +528,6 @@ def predict(df, nTrain, nTest, dfS):
     print('Q1 signal:\t\t %.6f' % dfS.at[df.index[-1], 'q1signal'].astype(float))
     print('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'q1signalRolling'].astype(float))
     print('\nCurrent Position: %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
-
     time.sleep(wait_time)
 
     featureImportances = pd.DataFrame(dfFeat)
@@ -519,7 +551,6 @@ def fnComputePortfolioRtn(pos):
     path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
 
     dfU = pd.read_csv(path + "SPY Price Data.csv")
-
     dfU.index = dfU['Date']
     dfU.sort_index(inplace=True)
 
@@ -534,9 +565,8 @@ def fnComputePortfolioRtn(pos):
     dfP['rtnPort'] = dfP['position'] * dfP['rtnSPY']
     dfP['cRtn-Port'] = (1 + dfP['rtnPort']).cumprod()-1
 
-    # todo:
-    # xlsx formatting here
 
+    # todo: xlsx formatting here
     # cols = ['signal',
     #         'Adj_Close',
     #         'rtnSPY',
@@ -560,31 +590,11 @@ def fnComputePortfolioRtn(pos):
 
 
 # --------------------------------------------------------------------------------------------------
-#  position binning
-
-def fnPositionBinning(df, posBins=[1.0, 0.75, -1.0]):
-    # todo:
-    # tweak for one row
-    # replace RiskToSPY with this function
-
-    # if signal > 0
-    df['position'] = np.where(df.signal > 0,
-                              # if signal greater than rolling median - 0.000001
-                              np.where(df.signal > (df.signal.expanding(min_periods=1).quantile(0.50) - 0.000001),
-                                       # return 1 if True, 0.75 if False
-                                       posBins[0], posBins[1]),
-                              # if signal <0 return -1
-                              posBins[2])
-    return df
-
-
-# --------------------------------------------------------------------------------------------------
 # plot feature importances and pred vs residual values
 
-def fnPlotFeatureImportance(model, dfFeat):
+def fnPlotFeatureImportance(dfFeat):
 
     dfFI = dfFeat.mean(axis=1)
-    # plot Feature Importance of RandomForests model
     names = dfFI.index.tolist()
     featNames = np.array(names)
 
@@ -600,8 +610,11 @@ def fnPlotFeatureImportance(model, dfFeat):
     return
 
 
-    # --------------------------------------------------------------------------------------------------
-    # plot predicted vs residual
+# --------------------------------------------------------------------------------------------------
+# plot predicted vs residual
+
+def plotResiduals():
+
     plt.scatter(y_train_pred.reshape(-1,1),
                 (y_train_pred.reshape(-1,1) - y_train.reshape(-1,1)),
                 c='steelblue',
@@ -610,6 +623,7 @@ def fnPlotFeatureImportance(model, dfFeat):
                 s=35,
                 alpha=0.9,
                 label='Training data')
+
     plt.scatter(y_test_pred.reshape(-1,1),
                 (y_test_pred.reshape(-1,1) - y_test.reshape(-1,1)),
                 c='limegreen',
@@ -624,8 +638,9 @@ def fnPlotFeatureImportance(model, dfFeat):
     plt.legend(loc='upper left')
     plt.hlines(y=0, xmin=-0.075, xmax=0.075, lw=2, color='black')
     plt.xlim([-0.075,0.075])
-    plt.show()
 
+    plt.show()
+    return
 
 
 # --------------------------------------------------------------------------------------------------
@@ -676,11 +691,13 @@ if __name__ == '__main__':
 
 
         # --------------------------------------------------------------------------------------------------
-        # compute portfolio returns using position bins
+        # compute portfolio returns
 
         dfP = fnComputePortfolioRtn(dpred)
 
-
+        # plot feature importance
+        print('Mean Feature Importance:\n', dfFeat.mean(axis = 1).sort_values(ascending = False))
+        fnPlotFeatureImportance(dfFeat = dfFeat)
 
 
         # todo:
@@ -690,12 +707,11 @@ if __name__ == '__main__':
 
 
 
-
-
     # --------------------------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------------------------
     # close logger / handlers
 
+        print("========== END PROGRAM ==========")
         logging.info("========== END PROGRAM ==========")
 
     except Exception as e:
