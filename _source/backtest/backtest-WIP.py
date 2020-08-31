@@ -11,15 +11,14 @@ wait_time = 0
 
 # --------------------------------------------------------------------------------------------------
 # todo:
-# 1. z-score of TMA strategy
-# 1a. 49 ---- 194 / 99 ---- 309 / 149
+# Also the 1 day, 2 day, 3 day log returns of VIX-VIX3M will probably help (as well as similar of VIX9D-VIX and VIX9D-VIX3m). not necessarily all of those but some
+# VIN, OVX, SKEW, USO
 # 2. put-call ratio
 # 3. SMA cboe index http://www.cboe.com/index/dashboard/smlcw#smlcw-overview
 
 # todo:
 # http://www.cboe.com/products/vix-index-volatility/volatility-indexes
-# 4. VIX9D, VIN and OVX --- start with these.
-# 5. Try Plain S-Score and other features from SMA (will need to add these to stationarity test before using as x-variables)
+# 4. VIN and OVX, USO
 # 6. Further time-frame tuning
 
 
@@ -33,21 +32,22 @@ np.random.seed(seed=seed)
 
 from talib import SMA
 import scipy.stats as stats
-from sklearn.preprocessing import StandardScaler
+from scipy.stats import boxcox
+from fastai.imports import *
+from fastai.tabular.all import *
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
 from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
 import matplotlib.pyplot as plt
 import pylab as plot
-
+import seaborn as sns
+from statsmodels.graphics.gofplots import qqplot as qp
 import warnings
 warnings.simplefilter("ignore")
 
-
-# --------------------------------------------------------------------------------------------------
 # custom imports
-
 from fnCommon import setPandas
 LOG_FILE_NAME = os.path.basename(__file__)
 
@@ -56,35 +56,96 @@ LOG_FILE_NAME = os.path.basename(__file__)
 # --------------------------------------------------------------------------------------------------
 # download VIX data from CBOE
 
-def fnGetVIXData(startDate=None, endDate=None):
+def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 
     # download latest data from CBOE
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
+    if ticker == 'VIX':
+        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}current.csv'.format(ticker.lower())
+        df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
 
-    df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
+        df.rename(columns={'VIX Close':'VIX_Close'}, inplace=True)
+        df = df[['VIX_Close']]
+
+        dfV = fnComputeReturns(df, 'VIX_Close', tPeriod = 3, retType = 'log')
+        # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 5, retType = 'log'), left_index=True,right_index = True)
+        dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 6, retType = 'log'), left_index=True, right_index = True)
+
+        dfV = dfV.add_prefix('vix-')
+        df = df.merge(dfV,left_index=True,right_index=True)
+
+    else:
+        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}dailyprices.csv'.format(ticker.lower())
+        df = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)
 
     if startDate:
         df = df.loc[df.index >= startDate]
     if endDate:
         df = df.loc[df.index <= endDate]
 
-    df.rename(columns={'VIX Close':'VIX_Close'}, inplace=True)
-    df = df[['VIX_Close']]
-
-    # df = fnComputeReturns(df, 'VIX_Close', retType = 'simple')
-
-    dfV = fnComputeReturns(df, 'VIX_Close', tPeriod = 3, retType = 'log')
-    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 2, retType = 'log'), left_index=True,right_index = True)
-    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 3, retType = 'log'), left_index=True,right_index = True)
-    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 4, retType = 'log'), left_index=True,right_index = True)
-    # dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 5, retType = 'log'), left_index=True,right_index = True)
-    dfV = pd.merge(dfV, fnComputeReturns(df, 'VIX_Close', tPeriod = 6, retType = 'log'), left_index=True, right_index = True)
-
-    dfV = dfV.add_prefix('vix-')
-
-    df = df.merge(dfV,left_index=True,right_index=True)
-
     return df
+
+
+# --------------------------------------------------------------------------------------------------
+# compute VIX Term structure
+
+def fnComputeVIXTerm(startDate=None, endDate=None):
+
+    # download latest data from CBOE
+    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
+    df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
+
+    df.rename(columns={'VIX Close':'VIX'}, inplace=True)
+    df = df[['VIX']]
+
+    # get 9-day vix
+    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix9ddailyprices.csv'
+    df9D = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)['Close']
+    df9D.index = pd.DatetimeIndex(df9D.index.str.replace('/', '-').str.replace('*', ''))
+
+    # get 3 month VIX
+    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix3mdailyprices.csv'
+    df3M = pd.read_csv(url, skiprows=2, index_col=0, parse_dates = True)['CLOSE']
+    df3M.index = pd.DatetimeIndex(df3M.index)
+
+    df['VIX9D'] = df9D
+    df['VIX3M'] = df3M
+    df.dropna(inplace=True)
+
+    if startDate:
+        df = df.loc[df.index >= startDate]
+    if endDate:
+        df = df.loc[df.index <= endDate]
+
+    # compute VIX Term Spreads
+    df['VIX-VIX3M'] = abs(df['VIX'] - df['VIX3M'])
+    df['VIX-VIX9D'] = abs(df['VIX'] - df['VIX9D'])
+    df['VIX9D-VIX3M'] = abs(df['VIX9D'] - df['VIX3M'])
+
+    dfVR = fnComputeReturns(df, 'VIX-VIX3M', tPeriod=1, retType='log')
+    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX9D', tPeriod = 1, retType = 'log'), left_index = True, right_index = True)
+    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX9D-VIX3M', tPeriod = 1, retType = 'log'), left_index = True, right_index = True)
+    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX3M', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
+    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX3M', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
+
+    cols = ['logRet-VIX_VIX3M', 'logRet-VIX_VIX9D', 'logRet-VIX9D_VIX3M','logRet-VIX_VIX3M-2d', 'logRet-VIX_VIX3M-3d']
+    dfVR.columns = cols
+    dfVR.dropna(inplace=True)
+
+    return dfVR
+
+
+# --------------------------------------------------------------------------------------------------
+# compute VIX Predictor
+
+# defined as: VixAlert = 0 or 1. if the vix is more than 18% higher than two days before the first of the current month and also greater than 21 than set VixAlert=1 else it's always 0.
+
+def fnVIXPredictor(df):
+    alert = 0
+    df['vix-ret'] = df['VIX_Close'].pct_change()
+    df['month'] = df.index - pd.offsets.MonthBegin(1,normalize=True) - pd.DateOffset(days=2,normalize=True)
+
+
+
 
 
 # --------------------------------------------------------------------------------------------------
@@ -159,38 +220,39 @@ def fnLoadPriceData(ticker='SPY'):
     df.sort_index(inplace = True)
 
     # compute returns
-    # df = fnComputeReturns(df, 'Adj_Close', retType = 'simple')
     dfR = fnComputeReturns(df, 'Adj_Close', tPeriod = 1, retType = 'log')
+
+    # compute lagged returns
     dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
     dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
     dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 4, retType = 'log'), left_index = True, right_index = True)
     dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 5, retType = 'log'), left_index = True, right_index = True)
-    # dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 6, retType = 'log'), left_index=True,right_index = True)
-    # dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 7, retType = 'log'), left_index=True,right_index = True)
 
     df = df.merge(dfR, left_index = True, right_index = True)
 
-
-    # --------------------------------------------------------------------------------------------------
     # compute moving averages and rolling z-score
+    df['Adj_Close_log'] = np.log(df.Adj_Close)
+    df['Adj_Close_Diff'] = df.Adj_Close_log - df.Adj_Close_log.shift(1)
 
     window = 49
-    df['ma-49D'] = SMA(df['Adj_Close'], timeperiod = window)
+    df['ma-49D'] = SMA(df['Adj_Close_Diff'], timeperiod = window)
     colMean = df["ma-49D"]                                  # .rolling(window = window).mean()
     colStd = df["ma-49D"].rolling(window = window).std()
-    df["ma-49D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+    df["ma-49D-zscore"] = (df['Adj_Close_Diff'] - colMean) / colStd
 
-    window = 194
-    df['ma-194D'] = SMA(df['Adj_Close'], timeperiod = window)
-    colMean = df["ma-194D"]                                 # .rolling(window = window).mean()
-    colStd = df["ma-194D"].rolling(window = window).std()
-    df["ma-194D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+    # window = 194
+    window = 99
+    df['ma-{}D'.format(window)] = SMA(df['Adj_Close_Diff'], timeperiod = window)
+    colMean = df["ma-{}D".format(window)]                                 # .rolling(window = window).mean()
+    colStd = df["ma-{}D".format(window)].rolling(window = window).std()
+    df["ma-{}D-zscore".format(window)] = (df['Adj_Close_Diff'] - colMean) / colStd
 
-    window = 309
-    df['ma-309D'] = SMA(df['Adj_Close'], timeperiod = window)
-    colMean = df["ma-309D"]                                 # .rolling(window = window).mean()
-    colStd = df["ma-309D"].rolling(window = window).std()
-    df["ma-309D-zscore"] = (df["Adj_Close"] - colMean) / colStd
+    # window = 309
+    window = 149
+    df['ma-{}D'.format(window)] = SMA(df['Adj_Close_Diff'], timeperiod = window)
+    colMean = df["ma-{}D".format(window)]                                 # .rolling(window = window).mean()
+    colStd = df["ma-{}D".format(window)].rolling(window = window).std()
+    df["ma-{}D-zscore".format(window)] = (df['Adj_Close_Diff'] - colMean) / colStd
 
     # df = df.merge(dfR, left_index = True, right_index = True)
 
@@ -203,7 +265,7 @@ def fnLoadPriceData(ticker='SPY'):
 
 
     # todo:
-    #  adjust these
+    #  adjust these automatically
 
     dfT = dfT.loc[(dfT.index >= '2015-07-23') & (dfT.index <= '2019-10-31')]
     rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= '2015-07-23') & (rtnStdDev.index <= '2019-10-31')]
@@ -308,11 +370,67 @@ def fnLoadActivityFeed(ticker='SPY'):
 
 
 # --------------------------------------------------------------------------------------------------
+# read in S-Factor Feed Data
+
+def fnLoadSFactorFeed(ticker='SPY'):
+
+    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\sFactorFeed\\'
+
+    colNames = ['ticker', 'date', 'raw-s', 'raw-s-mean', 'raw-volatility',
+                'raw-score', 's', 's-mean', 's-volatility', 's-score',
+                's-volume', 'sv-mean', 'sv-volatility', 'sv-score',
+                's-dispersion', 's-buzz', 's-delta',
+                'center-date', 'center-time', 'center-time-zone']
+
+    dfSpy2015 = pd.read_csv(path + '{}2015.txt'.format(ticker), skiprows = 4, sep = '\t')
+    dfSpy2016 = pd.read_csv(path + '{}2016.txt'.format(ticker), skiprows = 4, sep = '\t')
+    dfSpy2017 = pd.read_csv(path + '{}2017.txt'.format(ticker), skiprows = 4, sep = '\t')
+    dfSpy2018 = pd.read_csv(path + '{}2018.txt'.format(ticker), skiprows = 4, sep = '\t')
+    dfSpy2019 = pd.read_csv(path + '{}2019.txt'.format(ticker), skiprows = 4, sep = '\t')
+
+    # aggregating data
+    df_temp = dfSpy2015.append(dfSpy2016, ignore_index = True)
+    df_temp = df_temp.append(dfSpy2017, ignore_index = True)
+    df_temp = df_temp.append(dfSpy2018, ignore_index = True)
+    df_temp = df_temp.append(dfSpy2019, ignore_index = True)
+
+    df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
+    df_datetime.columns = ['Date', 'Time']
+
+    # merge datetime and aggregate dataframe
+    dfAgg = pd.merge(df_temp, df_datetime, left_index = True, right_index = True)
+
+    # filtering based on trading hours and excluding weekends
+    dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
+
+    dfAgg = dfAgg.loc[(dfAgg['Date'].dt.dayofweek != 5) & (dfAgg['Date'].dt.dayofweek != 6)]
+    dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
+
+    # exclude weekends and drop empty columns
+    dfAgg = dfAgg.dropna(axis = 'columns')
+    dfAgg = dfAgg.drop(columns = ['ticker', 'date', 'raw-s', 'raw-s-mean', 'raw-volatility', 'raw-score',
+                                  'center-date', 'center-time', 'center-time-zone'])
+
+    # aggregate by date
+    dfT = dfAgg.groupby('Date').last().reset_index()
+    dfT.index = dfT['Date']
+
+    dfT = dfT.drop(columns = ['Date', 'Time'])
+    dfT.columns = ticker + ':' + dfT.columns
+
+    return dfT
+
+
+# --------------------------------------------------------------------------------------------------
 # combine and aggregate spy / futures activity feed ata
 
-def fnAggActivityFeed(df1, df2):
+def fnAggActivityFeed(df1, df2, df3, df4):
+
+    df3.index = pd.to_datetime(df3.index).strftime('%Y-%m-%d')
+    df4.index = pd.to_datetime(df4.index).strftime('%Y-%m-%d')
 
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
+    dfB = pd.concat([df3, df4], axis=1, sort=False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
     df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnLoadPriceData(ticker='SPY')
@@ -321,23 +439,51 @@ def fnAggActivityFeed(df1, df2):
     rtnTodayToTomorrowClassified.index.name = 'Date'
 
     dfA.dropna(inplace = True)
+    dfB.dropna(inplace=True)
     rtnTodayToTomorrow.dropna(inplace = True)
 
     dfAgg = pd.merge(dfA, df, how = 'inner', left_index = True, right_index = True)
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrow, how = 'inner', left_index = True, right_index = True)
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrowClassified, how = 'inner', left_index = True, right_index = True)
 
+    # dfAgg = pd.merge(dfAgg, dfB, how='inner',left_index=True,right_index=True)
+
     # pull in VIX data
-    dfVIX = fnGetVIXData(startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
+    dfVIX = fnGetCBOEData(ticker='VIX', startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
     dfVIX.dropna(inplace = True)
 
     # merge current features with VIX features
     dfAgg = pd.merge(dfAgg, dfVIX, how = 'inner', left_index = True, right_index = True)
 
-    # dfAgg.drop(columns=[
-    #         'ES_F:ewm_volume_base_s',
-    #         'SPY:raw_s_MACD_ewma7-ewma14',
-    # ],inplace=True)
+    dfVIXTerm = fnComputeVIXTerm(startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
+    dfAgg = pd.merge(dfAgg, dfVIXTerm, how = 'inner', left_index = True, right_index = True)
+
+    dfAgg['date'] = dfAgg.index
+    make_date(dfAgg,'date')
+    test_eq(dfAgg['date'].dtype, np.dtype('datetime64[ns]'))
+
+    dfAgg = add_datepart(dfAgg, 'date')
+    dfAgg.drop(columns=['Elapsed'], inplace=True)
+    dfAgg.replace(False,0,inplace=True)
+    dfAgg.replace(True,1,inplace=True)
+
+    # test_eq(dfAgg.columns[-13:], ['Year', 'Month', 'Week', 'Day', 'Dayofweek', 'Dayofyear', 'Is_month_end', 'Is_month_start',
+    #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
+
+    dfAgg.drop(columns = [
+            'Adj_Close_log', 'Adj_Close_Diff',
+                          # 'Is_month_end', 'Is_month_start',
+                          # 'Is_quarter_end', 'Is_quarter_start',
+                          # 'Is_year_end','Is_year_start'
+    ],
+               inplace = True)
+
+    # dfAgg.drop(columns=['ma-309D-zscore', 'ma-194D-zscore', 'SPY:volume_base_s_z',
+    #    'ES_F:s-volatility', 'ES_F:s-score', 'VIX_Close', 'ES_F:sv-score',
+    #    'SPY:raw_s_MACD_ewma7-ewma14', 'SPY:s_dispersion_z', 'vix-log-rtn-6D',
+    #    'ES_F:volume_base_s_delta', 'ES_F:ewm_volume_base_s', 'SPY:s-score',
+    #    'ma-49D-zscore', 'Dayofweek'], inplace=True)
+
 
     return dfAgg
 
@@ -353,7 +499,6 @@ def winsorizeData(s):
 # adf testing
 
 def adf_test(timeSeries):
-
     dfADF = adfuller(timeSeries, autolag = 'AIC')
     output = pd.Series(dfADF[0:4], index = ['Test Statistic', 'p-value', '#Lags Used', 'Number of Observations Used'])
 
@@ -361,23 +506,20 @@ def adf_test(timeSeries):
         output['Critical Value (%s)' % key] = value
 
     logging.debug('ADF Testing: %s \n%s\n' % (timeSeries.name, output))
-
     return output
-
 
 # --------------------------------------------------------------------------------------------------
 # test stationarity
 
 def stationarity(result):
     plist = { }
-
     for col in result:
         if adf_test(result[col])['p-value'] < 0.05:
             st = True
         else:
             st = False
-        plist[col] = st
 
+        plist[col] = st
     return plist
 
 
@@ -422,10 +564,12 @@ def predict(df, nTrain, nTest, dfS):
         if stationarityResults[i][0] == 1:
             stationaryFactors.append(i)
 
-    # cols = [
-    #             'ES_F:volume_base_s_delta',
-    #             'ES_F:raw_s_MACD_ewma6-ewma26',
-            # ]
+    # colsAppend = ['ma-49D', 'ma-194D', 'ma-194D-zscore',
+    #               'ma-309D', 'ma-309D-zscore',
+    #               'Year', 'Month', 'Week', 'Dayofyear', 'Is_quarter_start', 'Is_year_end','Is_year_start']
+
+    # stationaryFactors.extend(colsAppend)
+
 
     X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
                                              'rtnTodayToTomorrowClassified', ]
@@ -467,6 +611,7 @@ def predict(df, nTrain, nTest, dfS):
 
     temp = pd.Series(RFmodel.feature_importances_, index = X_test.columns)
     dfFeat[df.index[-1]] = temp
+    # dfFeat = temp.transpose()
 
     # predict in-sample and out-of-sample
     y_train_pred = RFmodel.predict(X_train_std)
@@ -644,6 +789,18 @@ def plotResiduals():
 
 
 # --------------------------------------------------------------------------------------------------
+# plot distributions and quantile plots
+
+def plotDistributions(df):
+    for i in dfAgg.columns:
+        sns.distplot(dfAgg[i])
+        plt.show()
+        fig = qp(dfAgg[i], line='s')
+        plt.show()
+    return
+
+
+# --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # run main
 
@@ -667,8 +824,11 @@ if __name__ == '__main__':
         dfSpy = fnLoadActivityFeed(ticker='SPY')
         dfFutures = fnLoadActivityFeed(ticker='ES_F')
 
+        dfSpyFactor = fnLoadSFactorFeed(ticker='SPY')
+        dfFuturesFactor = fnLoadSFactorFeed(ticker='ES_F')
+
         # aggregate activity feed data
-        dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
+        dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
 
 
         # --------------------------------------------------------------------------------------------------
@@ -683,6 +843,7 @@ if __name__ == '__main__':
 
         dpred = { }
         dfFeat = { }
+
         for i in range(0, len(dfAgg) - nTrain - nTest, 1):
             dpred, dfFeat = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest, dfS)
 
