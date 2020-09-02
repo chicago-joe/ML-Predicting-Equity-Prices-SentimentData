@@ -1,17 +1,16 @@
 # --------------------------------------------------------------------------------------------------
-# backtest-WIP.py
+# backtest.py
 #
 #
 # --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 6/22/2020
 
-max_n = 251
+max_n = 500
 seed = 42
 wait_time = 0
 
 # --------------------------------------------------------------------------------------------------
 # todo:
-# Also the 1 day, 2 day, 3 day log returns of VIX-VIX3M will probably help (as well as similar of VIX9D-VIX and VIX9D-VIX3m). not necessarily all of those but some
 # VIN, OVX, SKEW, USO
 # 2. put-call ratio
 # 3. SMA cboe index http://www.cboe.com/index/dashboard/smlcw#smlcw-overview
@@ -116,22 +115,26 @@ def fnComputeVIXTerm(startDate=None, endDate=None):
     if endDate:
         df = df.loc[df.index <= endDate]
 
+    # todo:
+    #  flip spreads around
+
     # compute VIX Term Spreads
-    df['VIX-VIX3M'] = abs(df['VIX'] - df['VIX3M'])
-    df['VIX-VIX9D'] = abs(df['VIX'] - df['VIX9D'])
-    df['VIX9D-VIX3M'] = abs(df['VIX9D'] - df['VIX3M'])
+    # df['VIX-VIX3M'] = df['VIX'] - df['VIX3M']
+    # df['VIX-VIX9D'] = df['VIX'] - df['VIX9D']
+    # df['VIX9D-VIX3M'] = df['VIX9D'] - df['VIX3M']
 
-    dfVR = fnComputeReturns(df, 'VIX-VIX3M', tPeriod=1, retType='log')
-    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX9D', tPeriod = 1, retType = 'log'), left_index = True, right_index = True)
-    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX9D-VIX3M', tPeriod = 1, retType = 'log'), left_index = True, right_index = True)
-    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX3M', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
-    dfVR = pd.merge(dfVR, fnComputeReturns(df, 'VIX-VIX3M', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
+    df['VIX-VIX3M'] = df['VIX3M'] - df['VIX']
+    df['VIX-VIX9D'] = df['VIX9D'] - df['VIX']
+    df['VIX9D-VIX3M'] = df['VIX3M'] - df['VIX9D']
 
-    cols = ['logRet-VIX_VIX3M', 'logRet-VIX_VIX9D', 'logRet-VIX9D_VIX3M','logRet-VIX_VIX3M-2d', 'logRet-VIX_VIX3M-3d']
-    dfVR.columns = cols
-    dfVR.dropna(inplace=True)
+    # normalize and take log
+    df['Norm_VIX-VIX3M'] =  np.where(df['VIX-VIX3M']<0, np.log(abs(df['VIX-VIX3M'])) * -1, np.log(abs(df['VIX-VIX3M'])) *1)
+    df['Norm_VIX-VIX9D'] =  np.where(df['VIX-VIX9D']<0, np.log(abs(df['VIX-VIX9D'])) * -1, np.log(abs(df['VIX-VIX9D'])) * 1)
+    df['Norm_VIX9D-VIX3M'] =  np.where(df['VIX9D-VIX3M']<0, np.log(abs(df['VIX9D-VIX3M'])) * -1, np.log(abs(df['VIX9D-VIX3M'])) * 1)
+    
+    df = df[df.columns[-3:]]
 
-    return dfVR
+    return df
 
 
 # --------------------------------------------------------------------------------------------------
@@ -231,8 +234,9 @@ def fnLoadPriceData(ticker='SPY'):
     df = df.merge(dfR, left_index = True, right_index = True)
 
     # compute moving averages and rolling z-score
-    df['Adj_Close_log'] = np.log(df.Adj_Close)
-    df['Adj_Close_Diff'] = df.Adj_Close_log - df.Adj_Close_log.shift(1)
+    # df['Adj_Close_log'] = np.log(df.Adj_Close)
+    # df['Adj_Close_Diff'] = df.Adj_Close_log - df.Adj_Close_log.shift(1)
+    df['Adj_Close_Diff'] = np.log(df.Adj_Close).diff()
 
     window = 49
     df['ma-49D'] = SMA(df['Adj_Close_Diff'], timeperiod = window)
@@ -424,13 +428,13 @@ def fnLoadSFactorFeed(ticker='SPY'):
 # --------------------------------------------------------------------------------------------------
 # combine and aggregate spy / futures activity feed ata
 
-def fnAggActivityFeed(df1, df2, df3, df4):
+def fnAggActivityFeed(df1, df2):
 
-    df3.index = pd.to_datetime(df3.index).strftime('%Y-%m-%d')
-    df4.index = pd.to_datetime(df4.index).strftime('%Y-%m-%d')
+    # df3.index = pd.to_datetime(df3.index).strftime('%Y-%m-%d')
+    # df4.index = pd.to_datetime(df4.index).strftime('%Y-%m-%d')
 
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
-    dfB = pd.concat([df3, df4], axis=1, sort=False)
+    # dfB = pd.concat([df3, df4], axis=1, sort=False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
     df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnLoadPriceData(ticker='SPY')
@@ -439,7 +443,7 @@ def fnAggActivityFeed(df1, df2, df3, df4):
     rtnTodayToTomorrowClassified.index.name = 'Date'
 
     dfA.dropna(inplace = True)
-    dfB.dropna(inplace=True)
+    # dfB.dropna(inplace=True)
     rtnTodayToTomorrow.dropna(inplace = True)
 
     dfAgg = pd.merge(dfA, df, how = 'inner', left_index = True, right_index = True)
@@ -471,19 +475,18 @@ def fnAggActivityFeed(df1, df2, df3, df4):
     #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
 
     dfAgg.drop(columns = [
-            'Adj_Close_log', 'Adj_Close_Diff',
-                          # 'Is_month_end', 'Is_month_start',
-                          # 'Is_quarter_end', 'Is_quarter_start',
-                          # 'Is_year_end','Is_year_start'
+            # 'Adj_Close_log',
+            'Adj_Close_Diff',
+            'Is_month_end', 'Is_month_start',
+            'Is_quarter_end', 'Is_quarter_start',
+            'Is_year_end', 'Is_year_start',
+            # 'logRet-VIX_VIX3M',
+            # 'logRet-VIX_VIX3M-2d',
+            # 'ma-49D-zscore',
+            # 'ma-149D-zscore',
+            # 'Dayofweek',
     ],
                inplace = True)
-
-    # dfAgg.drop(columns=['ma-309D-zscore', 'ma-194D-zscore', 'SPY:volume_base_s_z',
-    #    'ES_F:s-volatility', 'ES_F:s-score', 'VIX_Close', 'ES_F:sv-score',
-    #    'SPY:raw_s_MACD_ewma7-ewma14', 'SPY:s_dispersion_z', 'vix-log-rtn-6D',
-    #    'ES_F:volume_base_s_delta', 'ES_F:ewm_volume_base_s', 'SPY:s-score',
-    #    'ma-49D-zscore', 'Dayofweek'], inplace=True)
-
 
     return dfAgg
 
@@ -570,7 +573,6 @@ def predict(df, nTrain, nTest, dfS):
 
     # stationaryFactors.extend(colsAppend)
 
-
     X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
                                              'rtnTodayToTomorrowClassified', ]
                                             # + cols
@@ -611,7 +613,6 @@ def predict(df, nTrain, nTest, dfS):
 
     temp = pd.Series(RFmodel.feature_importances_, index = X_test.columns)
     dfFeat[df.index[-1]] = temp
-    # dfFeat = temp.transpose()
 
     # predict in-sample and out-of-sample
     y_train_pred = RFmodel.predict(X_train_std)
@@ -647,10 +648,6 @@ def predict(df, nTrain, nTest, dfS):
     dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
 
 
-    # todo:
-    #  q1 signal < rolling signal = 0.75
-    # if signal > 0
-
     if dfS.at[df.index[-1], 'q1signalRolling'] == 9999:
         dfS.at[df.index[-1], 'position'] = 0
 
@@ -663,6 +660,16 @@ def predict(df, nTrain, nTest, dfS):
 
         elif (lastsignal > 0.001) & (dfS.at[df.index[-1], 'q1signalRolling'] < lastsignal) & (dfS.at[df.index[-1], 'q1signal'] < dfS.at[df.index[-1], 'q1signalRolling']):
             dfS.at[df.index[-1], 'position'] = -1
+
+        elif lastsignal > dfS.at[df.index[-1],'q1signalRolling'] + dfS.at[df.index[-1], 'q1signal']:
+            dfS.at[df.index[-1], 'position'] = 1
+
+        # todo:
+        # elif (dfS.at[df.index[-1], 'q1signalRolling'] > 0.001) & (lastsignal < 0.001):
+        #     dfS.at[df.index[-1], 'position'] = 0.75
+        # elif (lastsignal > (2 * dfS.at[df.index[-1], 'q1signalRolling'])) & (dfS.at[df.index[-1], 'q1signalRolling'] > 0):
+        #     dfS.at[df.index[-1], 'position'] = -0.75
+
 
         else:
             dfS.at[df.index[-1], 'position'] = 0
@@ -726,8 +733,9 @@ def fnComputePortfolioRtn(pos):
     print('\n\n----------------------------------------')
     print('----------------------------------------')
     print('Starting Portfolio:\n%s' % dfP.head(5))
-    print('\n')
+    print('\n\n----------------------------------------')
     print('Ending Portfolio:\n%s' % dfP.tail(5))
+    print('\n----------------------------------------')
 
     dfP.to_csv('backtest_results.csv')
 
@@ -824,11 +832,12 @@ if __name__ == '__main__':
         dfSpy = fnLoadActivityFeed(ticker='SPY')
         dfFutures = fnLoadActivityFeed(ticker='ES_F')
 
-        dfSpyFactor = fnLoadSFactorFeed(ticker='SPY')
-        dfFuturesFactor = fnLoadSFactorFeed(ticker='ES_F')
+        # dfSpyFactor = fnLoadSFactorFeed(ticker='SPY')
+        # dfFuturesFactor = fnLoadSFactorFeed(ticker='ES_F')
 
         # aggregate activity feed data
-        dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
+        # dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
+        dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
 
 
         # --------------------------------------------------------------------------------------------------
@@ -860,6 +869,7 @@ if __name__ == '__main__':
         print('Mean Feature Importance:\n', dfFeat.mean(axis = 1).sort_values(ascending = False))
         fnPlotFeatureImportance(dfFeat = dfFeat)
 
+        dfFeat.to_csv('featureImportance.csv')
 
         # todo:
         # plot cRet portfolio vs cRet SPY
@@ -872,7 +882,7 @@ if __name__ == '__main__':
     # --------------------------------------------------------------------------------------------------
     # close logger / handlers
 
-        print("========== END PROGRAM ==========")
+        print("\n\n========== END PROGRAM ==========")
         logging.info("========== END PROGRAM ==========")
 
     except Exception as e:
