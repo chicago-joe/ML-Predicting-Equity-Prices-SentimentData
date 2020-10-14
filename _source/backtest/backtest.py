@@ -5,7 +5,7 @@
 # --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 6/22/2020
 
-max_n = 500
+max_n = 251
 seed = 42
 wait_time = 0
 
@@ -54,6 +54,7 @@ LOG_FILE_NAME = os.path.basename(__file__)
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # download VIX data from CBOE
+# https://markets.cboe.com/us/futures/market_statistics/historical_data/products/csv/VX/2015-01-21/
 
 def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 
@@ -131,7 +132,7 @@ def fnComputeVIXTerm(startDate=None, endDate=None):
     df['Norm_VIX-VIX3M'] =  np.where(df['VIX-VIX3M']<0, np.log(abs(df['VIX-VIX3M'])) * -1, np.log(abs(df['VIX-VIX3M'])) *1)
     df['Norm_VIX-VIX9D'] =  np.where(df['VIX-VIX9D']<0, np.log(abs(df['VIX-VIX9D'])) * -1, np.log(abs(df['VIX-VIX9D'])) * 1)
     df['Norm_VIX9D-VIX3M'] =  np.where(df['VIX9D-VIX3M']<0, np.log(abs(df['VIX9D-VIX3M'])) * -1, np.log(abs(df['VIX9D-VIX3M'])) * 1)
-    
+
     df = df[df.columns[-3:]]
 
     return df
@@ -148,6 +149,47 @@ def fnVIXPredictor(df):
     df['month'] = df.index - pd.offsets.MonthBegin(1,normalize=True) - pd.DateOffset(days=2,normalize=True)
 
 
+# --------------------------------------------------------------------------------------------------
+# calculate VIX futures contango
+
+def fnVIXFuturesContango(days=2000):
+    url = "http://vixcentral.com/historical/?days=%s" % days
+    df = pd.read_html(url, flavor='bs4', header=0, index_col=0, parse_dates=True)[0]
+    df=df[:-1]
+    df.sort_index(ascending=True,inplace=True)
+
+    # convert string percentage types to float
+    cols = df.columns.to_list()[-3:]
+    for i in cols:
+        df[i]=df[i].str.strip("%").astype(float)/100
+
+    cols = df.columns.to_list()[:-3]
+    for i in cols:
+            df[i]=df[i].replace('-',0).astype(float)
+
+    df['warning'] = 0
+    # df.loc[df['Contango 2/1']< -0.05, 'warning']=1
+    df['warning']=np.where(df['Contango 2/1']<-0.05,1,0)
+
+    df['warningSevere']=0
+    # df.loc[df['Contango 2/1']< -0.09, 'warningSevere']=1
+    df['warningSevere']=np.where(df['Contango 2/1']<-0.09,1,0)
+
+    cols = df.columns.to_list()[-5:-2]
+
+    # todo:
+    # log difference to make stationary
+    for i in cols:
+        df[i] = np.log(abs(df[i])).diff()
+
+    df.dropna(inplace=True)
+    cols = df.columns.to_list()[-5:]
+    df = df[cols]
+    
+    # replace 0% contango days (np.infinity)
+    df = df.replace([np.inf, -np.inf], 0)
+
+    return df
 
 
 
@@ -474,6 +516,10 @@ def fnAggActivityFeed(df1, df2):
     # test_eq(dfAgg.columns[-13:], ['Year', 'Month', 'Week', 'Day', 'Dayofweek', 'Dayofyear', 'Is_month_end', 'Is_month_start',
     #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
 
+    # dfContango = fnVIXFuturesContango(days=len(dfAgg))
+    dfContango = fnVIXFuturesContango(days=2000)
+    dfAgg = pd.merge(dfAgg, dfContango, how='left', left_index=True, right_index=True).fillna(method='ffill')
+
     dfAgg.drop(columns = [
             # 'Adj_Close_log',
             'Adj_Close_Diff',
@@ -487,6 +533,9 @@ def fnAggActivityFeed(df1, df2):
             # 'Dayofweek',
     ],
                inplace = True)
+
+    # to remove all sma features:
+    # dfAgg=dfAgg.loc[:,dfAgg.columns[-26:]]
 
     return dfAgg
 
@@ -570,8 +619,13 @@ def predict(df, nTrain, nTest, dfS):
     # colsAppend = ['ma-49D', 'ma-194D', 'ma-194D-zscore',
     #               'ma-309D', 'ma-309D-zscore',
     #               'Year', 'Month', 'Week', 'Dayofyear', 'Is_quarter_start', 'Is_year_end','Is_year_start']
-
     # stationaryFactors.extend(colsAppend)
+
+    # todo:
+    # append new vix futures contango data to stationarity results
+    # for i in stationarityResults.columns[-5:]:
+    #     if stationarityResults[i][0]==0:
+    #         stationaryFactors.append(i)
 
     X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
                                              'rtnTodayToTomorrowClassified', ]
