@@ -130,3 +130,8 @@ dmypy.json
 _2019/
 _source/backtest/dailyPred/
 _source/sra/
+_source/_data/activityFeed/*
+_source/_data/sFactorFeed/*
+_source/_data/vixFutures/*.csv
+_source/_data/stockPrices/*.csv
+models/*
