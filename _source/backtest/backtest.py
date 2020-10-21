@@ -5,6 +5,7 @@
 # --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 6/22/2020
 
+ticker = 'SPY'
 max_n = 251
 seed = 42
 wait_time = 0
@@ -20,34 +21,40 @@ wait_time = 0
 # 4. VIN and OVX, USO
 # 6. Further time-frame tuning
 
-
 # --------------------------------------------------------------------------------------------------
 # Module imports
 
 import os, logging, time
 import pandas as pd
+
 import numpy as np
 np.random.seed(seed=seed)
 
 from talib import SMA
+
 import scipy.stats as stats
 from scipy.stats import boxcox
+from scipy.stats.mstats import winsorize
+
 from fastai.imports import *
 from fastai.tabular.all import *
+
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
-from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
+
 import matplotlib.pyplot as plt
 import pylab as plot
 import seaborn as sns
 from statsmodels.graphics.gofplots import qqplot as qp
+
 import warnings
 warnings.simplefilter("ignore")
 
 # custom imports
 from fnCommon import setPandas
+from loaders import fnLoadStockPriceData
 LOG_FILE_NAME = os.path.basename(__file__)
 
 
@@ -188,15 +195,13 @@ def fnVIXFuturesContango(days=2000):
     
     # replace 0% contango days (np.infinity)
     df = df.replace([np.inf, -np.inf], 0)
-
     return df
-
 
 
 # --------------------------------------------------------------------------------------------------
 # compute simple or log returns
 
-def fnComputeReturns(df, colPrc='Adj_Close', tPeriod = None, retType = 'simple'):
+def fnComputeReturns(df, colPrc='adjClose', tPeriod = None, retType = 'simple'):
 
     if retType.lower()=='log':
         ret = pd.Series(np.log(df[colPrc]).diff(tPeriod))
@@ -208,15 +213,14 @@ def fnComputeReturns(df, colPrc='Adj_Close', tPeriod = None, retType = 'simple')
 
     else:
         print('Please choose simple or log return type')
-
     return ret
 
 
+# todo:
+# Edit classification bins
 # --------------------------------------------------------------------------------------------------
 # classify simple or log returns
 
-# todo:
-# Edit classification bins
 def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['{}-rtn-1D'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
@@ -249,56 +253,51 @@ def fnClassifyReturns(df, retType = 'simple'):
 
     return df
 
-
 # --------------------------------------------------------------------------------------------------
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
 # noinspection DuplicatedCode
-def fnLoadPriceData(ticker='SPY'):
+def fnCalculateLaggedRets(ticker='SPY'):
 
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
+    path = '..\\_data\\stockPrices\\'
 
-    df = pd.read_csv(path + "SPY Price Data.csv")
-
-    df.index = df['Date']
-    df.index.name = 'date'
-    df.sort_index(inplace = True)
+    df = pd.read_csv(path + '{}.csv'.format(ticker), index_col='date',parse_dates=True)
 
     # compute returns
-    dfR = fnComputeReturns(df, 'Adj_Close', tPeriod = 1, retType = 'log')
+    dfR = fnComputeReturns(df, 'adjClose', tPeriod = 1, retType = 'log')
 
     # compute lagged returns
-    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
-    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
-    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 4, retType = 'log'), left_index = True, right_index = True)
-    dfR = pd.merge(dfR, fnComputeReturns(df, 'Adj_Close', tPeriod = 5, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'adjClose', tPeriod = 2, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'adjClose', tPeriod = 3, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'adjClose', tPeriod = 4, retType = 'log'), left_index = True, right_index = True)
+    dfR = pd.merge(dfR, fnComputeReturns(df, 'adjClose', tPeriod = 5, retType = 'log'), left_index = True, right_index = True)
 
     df = df.merge(dfR, left_index = True, right_index = True)
 
     # compute moving averages and rolling z-score
-    # df['Adj_Close_log'] = np.log(df.Adj_Close)
-    # df['Adj_Close_Diff'] = df.Adj_Close_log - df.Adj_Close_log.shift(1)
-    df['Adj_Close_Diff'] = np.log(df.Adj_Close).diff()
+    # df['adjClose_log'] = np.log(df.adjClose)
+    # df['adjClose_Diff'] = df.adjClose_log - df.adjClose_log.shift(1)
+    df['adjClose_Diff'] = np.log(df.adjClose).diff()
 
     window = 49
-    df['ma-49D'] = SMA(df['Adj_Close_Diff'], timeperiod = window)
+    df['ma-49D'] = SMA(df['adjClose_Diff'], timeperiod = window)
     colMean = df["ma-49D"]                                  # .rolling(window = window).mean()
     colStd = df["ma-49D"].rolling(window = window).std()
-    df["ma-49D-zscore"] = (df['Adj_Close_Diff'] - colMean) / colStd
+    df["ma-49D-zscore"] = (df['adjClose_Diff'] - colMean) / colStd
 
     # window = 194
     window = 99
-    df['ma-{}D'.format(window)] = SMA(df['Adj_Close_Diff'], timeperiod = window)
+    df['ma-{}D'.format(window)] = SMA(df['adjClose_Diff'], timeperiod = window)
     colMean = df["ma-{}D".format(window)]                                 # .rolling(window = window).mean()
     colStd = df["ma-{}D".format(window)].rolling(window = window).std()
-    df["ma-{}D-zscore".format(window)] = (df['Adj_Close_Diff'] - colMean) / colStd
+    df["ma-{}D-zscore".format(window)] = (df['adjClose_Diff'] - colMean) / colStd
 
     # window = 309
     window = 149
-    df['ma-{}D'.format(window)] = SMA(df['Adj_Close_Diff'], timeperiod = window)
+    df['ma-{}D'.format(window)] = SMA(df['adjClose_Diff'], timeperiod = window)
     colMean = df["ma-{}D".format(window)]                                 # .rolling(window = window).mean()
     colStd = df["ma-{}D".format(window)].rolling(window = window).std()
-    df["ma-{}D-zscore".format(window)] = (df['Adj_Close_Diff'] - colMean) / colStd
+    df["ma-{}D-zscore".format(window)] = (df['adjClose_Diff'] - colMean) / colStd
 
     # df = df.merge(dfR, left_index = True, right_index = True)
 
@@ -317,7 +316,7 @@ def fnLoadPriceData(ticker='SPY'):
     rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= '2015-07-23') & (rtnStdDev.index <= '2019-10-31')]
 
     ## using regular returns to calculate target variable
-    rtnTodayToTomorrow = dfT['Adj_Close'].pct_change().shift(-1)
+    rtnTodayToTomorrow = dfT['adjClose'].pct_change().shift(-1)
 
     # classify returns TOMORROW based on std deviation * bin
     rtnTodayToTomorrowClassified = [
@@ -334,10 +333,7 @@ def fnLoadPriceData(ticker='SPY'):
     rtnTodayToTomorrowClassified.index = rtnStdDev.index
     rtnTodayToTomorrowClassified.columns = ['rtnTodayToTomorrowClassified']
 
-    colsDrop = ['Date', 'Open', 'High', 'Low', 'Close',
-                'Volume', 'Dividend', 'Split', 'Adj_Open', 'Adj_High',
-                'Adj_Low', 'Adj_Close', 'Adj_Volume', ]
-
+    colsDrop = ['adjClose']
     dfT.drop(columns = colsDrop, inplace = True)
     dfT.dropna(inplace = True)
 
@@ -349,24 +345,24 @@ def fnLoadPriceData(ticker='SPY'):
 
 def fnLoadActivityFeed(ticker='SPY'):
 
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\activityFeed\\'
+    path = '..\\_data\\activityFeed\\'
 
     colNames = ['ticker', 'date', 'description', 'sector',
                 'industry', 'raw_s', 's-volume', 's-dispersion',
                 'raw-s-delta', 'volume-delta', 'center-date',
                 'center-time', 'center-time-zone']
 
-    dfSpy2015 = pd.read_csv(path + '{}2015.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
-    dfSpy2016 = pd.read_csv(path + '{}2016.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
-    dfSpy2017 = pd.read_csv(path + '{}2017.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
-    dfSpy2018 = pd.read_csv(path + '{}2018.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
-    dfSpy2019 = pd.read_csv(path + '{}2019.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
+    df2015 = pd.read_csv(path + '2015\\{}.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
+    df2016 = pd.read_csv(path + '2016\\{}.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
+    df2017 = pd.read_csv(path + '2017\\{}.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
+    df2018 = pd.read_csv(path + '2018\\{}.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
+    df2019 = pd.read_csv(path + '2019\\{}.txt'.format(ticker), skiprows = 6, sep = '\t', names = colNames)
 
     # aggregating data
-    df_temp = dfSpy2015.append(dfSpy2016, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2017, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2018, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2019, ignore_index = True)
+    df_temp = df2015.append(df2016, ignore_index = True)
+    df_temp = df_temp.append(df2017, ignore_index = True)
+    df_temp = df_temp.append(df2018, ignore_index = True)
+    df_temp = df_temp.append(df2019, ignore_index = True)
 
     df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
     df_datetime.columns = ['Date', 'Time']
@@ -420,7 +416,7 @@ def fnLoadActivityFeed(ticker='SPY'):
 
 def fnLoadSFactorFeed(ticker='SPY'):
 
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\sFactorFeed\\'
+    path = '..\\_data\\sFactorFeed\\'
 
     colNames = ['ticker', 'date', 'raw-s', 'raw-s-mean', 'raw-volatility',
                 'raw-score', 's', 's-mean', 's-volatility', 's-score',
@@ -428,17 +424,17 @@ def fnLoadSFactorFeed(ticker='SPY'):
                 's-dispersion', 's-buzz', 's-delta',
                 'center-date', 'center-time', 'center-time-zone']
 
-    dfSpy2015 = pd.read_csv(path + '{}2015.txt'.format(ticker), skiprows = 4, sep = '\t')
-    dfSpy2016 = pd.read_csv(path + '{}2016.txt'.format(ticker), skiprows = 4, sep = '\t')
-    dfSpy2017 = pd.read_csv(path + '{}2017.txt'.format(ticker), skiprows = 4, sep = '\t')
-    dfSpy2018 = pd.read_csv(path + '{}2018.txt'.format(ticker), skiprows = 4, sep = '\t')
-    dfSpy2019 = pd.read_csv(path + '{}2019.txt'.format(ticker), skiprows = 4, sep = '\t')
+    df2015 = pd.read_csv(path + '2015\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
+    df2016 = pd.read_csv(path + '2016\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
+    df2017 = pd.read_csv(path + '2017\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
+    df2018 = pd.read_csv(path + '2018\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
+    df2019 = pd.read_csv(path + '2019\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
 
     # aggregating data
-    df_temp = dfSpy2015.append(dfSpy2016, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2017, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2018, ignore_index = True)
-    df_temp = df_temp.append(dfSpy2019, ignore_index = True)
+    df_temp = df2015.append(df2016, ignore_index = True)
+    df_temp = df_temp.append(df2017, ignore_index = True)
+    df_temp = df_temp.append(df2018, ignore_index = True)
+    df_temp = df_temp.append(df2019, ignore_index = True)
 
     df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
     df_datetime.columns = ['Date', 'Time']
@@ -470,7 +466,7 @@ def fnLoadSFactorFeed(ticker='SPY'):
 # --------------------------------------------------------------------------------------------------
 # combine and aggregate spy / futures activity feed ata
 
-def fnAggActivityFeed(df1, df2):
+def fnAggActivityFeed(df1, df2, ticker=None):
 
     # df3.index = pd.to_datetime(df3.index).strftime('%Y-%m-%d')
     # df4.index = pd.to_datetime(df4.index).strftime('%Y-%m-%d')
@@ -479,7 +475,7 @@ def fnAggActivityFeed(df1, df2):
     # dfB = pd.concat([df3, df4], axis=1, sort=False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
-    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnLoadPriceData(ticker='SPY')
+    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnCalculateLaggedRets(ticker=ticker)
 
     rtnTodayToTomorrow.index.name = 'Date'
     rtnTodayToTomorrowClassified.index.name = 'Date'
@@ -510,8 +506,8 @@ def fnAggActivityFeed(df1, df2):
 
     dfAgg = add_datepart(dfAgg, 'date')
     dfAgg.drop(columns=['Elapsed'], inplace=True)
-    dfAgg.replace(False,0,inplace=True)
-    dfAgg.replace(True,1,inplace=True)
+    dfAgg.replace(False,0, inplace=True)
+    dfAgg.replace(True,1, inplace=True)
 
     # test_eq(dfAgg.columns[-13:], ['Year', 'Month', 'Week', 'Day', 'Dayofweek', 'Dayofyear', 'Is_month_end', 'Is_month_start',
     #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
@@ -521,8 +517,8 @@ def fnAggActivityFeed(df1, df2):
     dfAgg = pd.merge(dfAgg, dfContango, how='left', left_index=True, right_index=True).fillna(method='ffill')
 
     dfAgg.drop(columns = [
-            # 'Adj_Close_log',
-            'Adj_Close_Diff',
+            # 'adjClose_log',
+            'adjClose_Diff',
             'Is_month_end', 'Is_month_start',
             'Is_quarter_end', 'Is_quarter_start',
             'Is_year_end', 'Is_year_start',
@@ -695,11 +691,15 @@ def predict(df, nTrain, nTest, dfS):
 
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
-    dfS.at[df.index[-1], 'q1signal'] = q1signal
+
+    dfS.loc[dfS.index==df.index[-1], 'q1signal'] = q1signal
+    # dfS.at[df.index[-1], 'q1signal'] = q1signal
 
     lastsignal = predictionsY[-1]
-    dfS.at[df.index[-1], 'lastsignal'] = lastsignal
-    dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
+    dfS.loc[dfS.index==df.index[-1], 'lastsignal'] = lastsignal
+    # dfS.at[df.index[-1], 'lastsignal'] = lastsignal
+    dfS.loc[dfS.index==df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
+    # dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999).astype(int)
 
 
     if dfS.at[df.index[-1], 'q1signalRolling'] == 9999:
@@ -724,16 +724,15 @@ def predict(df, nTrain, nTest, dfS):
         # elif (lastsignal > (2 * dfS.at[df.index[-1], 'q1signalRolling'])) & (dfS.at[df.index[-1], 'q1signalRolling'] > 0):
         #     dfS.at[df.index[-1], 'position'] = -0.75
 
-
         else:
             dfS.at[df.index[-1], 'position'] = 0
 
 
     print(' ')
-    print('Last signal:\t%.6f' % dfS.at[df.index[-1], 'lastsignal'].astype(float))
-    print('Q1 signal:\t\t %.6f' % dfS.at[df.index[-1], 'q1signal'].astype(float))
-    print('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'q1signalRolling'].astype(float))
-    print('\nCurrent Position: %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
+    print('Last signal:\t%.6f' % dfS.at[df.index[-1], 'lastsignal'])
+    print('Q1 signal:\t\t %.6f' % dfS.at[df.index[-1], 'q1signal'])
+    print('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'q1signalRolling'])
+    print('\nCurrent Position: %.2f' % dfS.at[df.index[-1], 'position'])
     time.sleep(wait_time)
 
     featureImportances = pd.DataFrame(dfFeat)
@@ -744,7 +743,7 @@ def predict(df, nTrain, nTest, dfS):
 # --------------------------------------------------------------------------------------------------
 # compute portfolio returns with position sizing
 
-def fnComputePortfolioRtn(pos):
+def fnComputePortfolioRtn(ticker='SPY', pos=None):
 
     dfP = pos.copy()
 
@@ -754,15 +753,15 @@ def fnComputePortfolioRtn(pos):
     dfP.index = pd.DatetimeIndex(dfP.index)
 
     # import SPY returns
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
+    path = '..\\_data\\stockPrices\\'
 
-    dfU = pd.read_csv(path + "SPY Price Data.csv")
+    dfU = pd.read_csv(path + '{}.csv'.format(ticker))
     dfU.index = dfU['Date']
     dfU.sort_index(inplace=True)
 
-    dfU['rtnSPY'] = dfU['Adj_Close'].pct_change().shift(-1)
+    dfU['rtnSPY'] = dfU['adjClose'].pct_change().shift(-1)
     dfU.index = pd.DatetimeIndex(dfU.index)
-    dfP = dfP.merge(dfU[['Adj_Close','rtnSPY']], how = 'left', left_index = True, right_index = True)
+    dfP = dfP.merge(dfU[['adjClose','rtnSPY']], how = 'left', left_index = True, right_index = True)
 
     # calculate cumulative asset return
     dfP['cRtn-SPY'] = ((1 + dfP['rtnSPY']).cumprod() - 1).fillna(0)
@@ -774,7 +773,7 @@ def fnComputePortfolioRtn(pos):
 
     # todo: xlsx formatting here
     # cols = ['signal',
-    #         'Adj_Close',
+    #         'adjClose',
     #         'rtnSPY',
     #         'cRtn-SPY',
     #         'position',
@@ -820,7 +819,7 @@ def fnPlotFeatureImportance(dfFeat):
 # --------------------------------------------------------------------------------------------------
 # plot predicted vs residual
 
-def plotResiduals():
+def plotResiduals(y_train, y_train_pred, y_test, y_test_pred):
 
     plt.scatter(y_train_pred.reshape(-1,1),
                 (y_train_pred.reshape(-1,1) - y_train.reshape(-1,1)),
@@ -875,15 +874,10 @@ if __name__ == '__main__':
     floatFormatter = "{:,.6f}".format
     np.set_printoptions(formatter = {'float_kind':floatFormatter})
 
-    path = '.\\_source\\'
-
-
-    # --------------------------------------------------------------------------------------------------
-
     try:
 
         # load SMA activity data
-        dfSpy = fnLoadActivityFeed(ticker='SPY')
+        dfRaw = fnLoadActivityFeed(ticker=ticker)
         dfFutures = fnLoadActivityFeed(ticker='ES_F')
 
         # dfSpyFactor = fnLoadSFactorFeed(ticker='SPY')
@@ -891,18 +885,26 @@ if __name__ == '__main__':
 
         # aggregate activity feed data
         # dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
-        dfAgg = fnAggActivityFeed(dfSpy, dfFutures)
+
+        # download stock price data to csv
+        endDate = pd.to_datetime(datetime.now()).strftime('%Y-%m-%d')
+        dfStk = fnLoadStockPriceData(ticker, startDate= '2012-01-02', endDate = endDate, source= 'tiingo')
+
+        fpath = "..\\_data\\stockPrices\\{}.csv".format(ticker)
+        dfStk.to_csv(fpath)
+
+        dfAgg = fnAggActivityFeed(dfRaw, dfFutures, ticker=ticker)
 
 
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 
-        dfAgg = dfAgg[598 - 450 - 100 + 1:]
+        # dfAgg = dfAgg[598 - 450 - 100 + 1:]
 
-        nTrain = 440
+        nTrain = 503
         nTest = 100
 
-        dfS = pd.DataFrame(index = [dfAgg[539:].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
+        dfS = pd.DataFrame(index = dfAgg.loc[dfAgg.index>'2017-12-31'].index, columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
 
         dpred = { }
         dfFeat = { }
@@ -917,7 +919,7 @@ if __name__ == '__main__':
         # --------------------------------------------------------------------------------------------------
         # compute portfolio returns
 
-        dfP = fnComputePortfolioRtn(dpred)
+        dfP = fnComputePortfolioRtn(ticker=ticker, pos=dpred)
 
         # plot feature importance
         print('Mean Feature Importance:\n', dfFeat.mean(axis = 1).sort_values(ascending = False))
