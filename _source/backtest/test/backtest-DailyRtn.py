@@ -219,7 +219,7 @@ def fnClassifyReturns(df, retType = 'simple'):
 # noinspection DuplicatedCode
 def fnLoadPriceData(ticker='SPY'):
 
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
+    path = '/\\'
 
     df = pd.read_csv(path + "SPY Price Data.csv")
 
@@ -716,7 +716,7 @@ def fnComputePortfolioRtn(pos):
     dfP.index = pd.DatetimeIndex(dfP.index)
 
     # import SPY returns
-    path = 'C:\\Users\\jloss\\PyCharmProjects\\ML-Predicting-Equity-Prices-SentimentData\\_source\\_data\\spyPrices\\'
+    path = '/\\'
 
     dfU = pd.read_csv(path + "SPY Price Data.csv")
     dfU.index = dfU['Date']
