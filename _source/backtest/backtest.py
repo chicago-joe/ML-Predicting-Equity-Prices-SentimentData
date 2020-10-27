@@ -6,7 +6,7 @@
 # created by Joseph Loss on 6/22/2020
 
 ticker = 'SPY'
-max_n = 251
+max_n = 500
 seed = 42
 wait_time = 0
 
@@ -42,6 +42,7 @@ from fastai.tabular.all import *
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
+from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
 
 import matplotlib.pyplot as plt
@@ -54,7 +55,9 @@ warnings.simplefilter("ignore")
 
 # custom imports
 from fnCommon import setPandas
-from loaders import fnLoadStockPriceData
+from loaders import fnLoadStockPriceData, fnGetEquityPCR
+
+
 LOG_FILE_NAME = os.path.basename(__file__)
 
 
@@ -253,6 +256,20 @@ def fnClassifyReturns(df, retType = 'simple'):
 
     return df
 
+
+# --------------------------------------------------------------------------------------------------
+# calculate pct change in trading volume
+
+def fnCalculateVolumeChg(ticker='SPY'):
+
+    path = '..\\_data\\stockPrices\\'
+    df = pd.read_csv(path + '{}.csv'.format(ticker), index_col = 'date', parse_dates = True)
+    volChg = fnComputeReturns(df, colPrc = 'adjVolume', tPeriod = 1, retType = 'simple')
+    volChg.name = 'pctChgTrdVolume'
+
+    return volChg
+
+
 # --------------------------------------------------------------------------------------------------
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
@@ -260,7 +277,6 @@ def fnClassifyReturns(df, retType = 'simple'):
 def fnCalculateLaggedRets(ticker='SPY'):
 
     path = '..\\_data\\stockPrices\\'
-
     df = pd.read_csv(path + '{}.csv'.format(ticker), index_col='date',parse_dates=True)
 
     # compute returns
@@ -512,9 +528,20 @@ def fnAggActivityFeed(df1, df2, ticker=None):
     # test_eq(dfAgg.columns[-13:], ['Year', 'Month', 'Week', 'Day', 'Dayofweek', 'Dayofyear', 'Is_month_end', 'Is_month_start',
     #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
 
+    # add VIX Futures Contango
     # dfContango = fnVIXFuturesContango(days=len(dfAgg))
     dfContango = fnVIXFuturesContango(days=2000)
     dfAgg = pd.merge(dfAgg, dfContango, how='left', left_index=True, right_index=True).fillna(method='ffill')
+
+    # get equity put/call ratio from CBOE
+    dfPCR = fnGetEquityPCR(ticker='EQUITY', endDate=dfAgg.index[-1])
+    # fpath = "..\\_data\\equitypcr.csv"
+    # dfPCR.to_csv(fpath)
+    dfAgg = pd.merge(dfAgg, dfPCR['pcRatio'], how='left', left_index=True, right_index=True)
+
+    # get pctChange in trading volume as a feature
+    dfTrdVol = fnCalculateVolumeChg(ticker=ticker)
+    dfAgg = pd.merge(dfAgg, dfTrdVol, how='left', left_index=True, right_index=True)
 
     dfAgg.drop(columns = [
             # 'adjClose_log',
@@ -524,9 +551,13 @@ def fnAggActivityFeed(df1, df2, ticker=None):
             'Is_year_end', 'Is_year_start',
             # 'logRet-VIX_VIX3M',
             # 'logRet-VIX_VIX3M-2d',
-            # 'ma-49D-zscore',
-            # 'ma-149D-zscore',
-            # 'Dayofweek',
+            'rtnStdDev',
+            'warning',
+            'warningSevere',
+            'Norm_VIX-VIX3M',
+            'ma-49D-zscore',
+            'ma-149D-zscore',
+            'Week',
     ],
                inplace = True)
 
@@ -692,13 +723,13 @@ def predict(df, nTrain, nTest, dfS):
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
 
-    dfS.loc[dfS.index==df.index[-1], 'q1signal'] = q1signal
+    dfS.at[df.index[-1], 'q1signal'] = q1signal
     # dfS.at[df.index[-1], 'q1signal'] = q1signal
 
     lastsignal = predictionsY[-1]
-    dfS.loc[dfS.index==df.index[-1], 'lastsignal'] = lastsignal
+    dfS.at[df.index[-1], 'lastsignal'] = lastsignal
     # dfS.at[df.index[-1], 'lastsignal'] = lastsignal
-    dfS.loc[dfS.index==df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
+    dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
     # dfS.at[df.index[-1], 'q1signalRolling'] = (dfS['lastsignal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999).astype(int)
 
 
@@ -755,9 +786,9 @@ def fnComputePortfolioRtn(ticker='SPY', pos=None):
     # import SPY returns
     path = '..\\_data\\stockPrices\\'
 
-    dfU = pd.read_csv(path + '{}.csv'.format(ticker))
-    dfU.index = dfU['Date']
-    dfU.sort_index(inplace=True)
+    dfU = pd.read_csv(path + '{}.csv'.format(ticker),index_col='date',parse_dates=True)
+    # dfU.index = dfU['Date']
+    # dfU.sort_index(inplace=True)
 
     dfU['rtnSPY'] = dfU['adjClose'].pct_change().shift(-1)
     dfU.index = pd.DatetimeIndex(dfU.index)
@@ -886,25 +917,30 @@ if __name__ == '__main__':
         # aggregate activity feed data
         # dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
 
+
         # download stock price data to csv
         endDate = pd.to_datetime(datetime.now()).strftime('%Y-%m-%d')
         dfStk = fnLoadStockPriceData(ticker, startDate= '2012-01-02', endDate = endDate, source= 'tiingo')
-
         fpath = "..\\_data\\stockPrices\\{}.csv".format(ticker)
         dfStk.to_csv(fpath)
 
+        # aggregate feature data
         dfAgg = fnAggActivityFeed(dfRaw, dfFutures, ticker=ticker)
 
 
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 
-        # dfAgg = dfAgg[598 - 450 - 100 + 1:]
+        dfAgg = dfAgg.loc[dfAgg.index>='2015-10-21']                    # todo: dfAgg[598 - 450 - 100 + 1:]
 
-        nTrain = 503
+        nTrain = 440
+        # nTrain = 503
         nTest = 100
 
-        dfS = pd.DataFrame(index = dfAgg.loc[dfAgg.index>'2017-12-31'].index, columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
+        # dfS = pd.DataFrame(index = [dfAgg[0:(nTrain+nTest):].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
+        dfS = pd.DataFrame(index = [dfAgg[nTrain - 1 + nTest:].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
+        # dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index>'2017-12-31'].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
+        # dfS = pd.DataFrame(index = dfAgg[539:].index, columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
 
         dpred = { }
         dfFeat = { }
