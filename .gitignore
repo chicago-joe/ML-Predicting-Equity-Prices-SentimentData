@@ -135,3 +135,5 @@ _source/_data/sFactorFeed/*
 _source/_data/vixFutures/*.csv
 _source/_data/stockPrices/*.csv
 models/*
+_source/IE598-Electronic-Trading-Final-Project-master/
+z_deprecated/

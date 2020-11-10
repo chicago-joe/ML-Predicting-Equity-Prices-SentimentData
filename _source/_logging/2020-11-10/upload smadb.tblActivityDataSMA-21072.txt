@@ -1,0 +1,8 @@
+11/10/2020 02:03:40 AM - INFO - tblActivityDataSMA 02_03_40-21072.txt saved in: .\results\upload
+11/10/2020 02:03:40 AM - INFO - Creating temp file: .\results\upload\tblActivityDataSMA 02_03_40-21072.txt
+11/10/2020 02:09:10 AM - INFO - tblActivityDataSMA 02_09_10-21072.txt saved in: .\results\upload
+11/10/2020 02:09:10 AM - INFO - Creating temp file: .\results\upload\tblActivityDataSMA 02_09_10-21072.txt
+11/10/2020 02:23:47 AM - INFO - tblActivityDataSMA 02_23_47-21072.txt saved in: .\results\upload
+11/10/2020 02:23:47 AM - INFO - Creating temp file: .\results\upload\tblActivityDataSMA 02_23_47-21072.txt
+11/10/2020 02:28:58 AM - INFO - tblActivityDataSMA 02_28_58-21072.txt saved in: .\results\upload
+11/10/2020 02:28:58 AM - INFO - Creating temp file: .\results\upload\tblActivityDataSMA 02_28_58-21072.txt
