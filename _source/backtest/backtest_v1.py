@@ -13,7 +13,13 @@ wait_time = 0
 # --------------------------------------------------------------------------------------------------
 # todo:
 # VIN, OVX, SKEW, USO
+# 2. put-call ratio
 # 3. SMA cboe index http://www.cboe.com/index/dashboard/smlcw#smlcw-overview
+
+# todo:
+# http://www.cboe.com/products/vix-index-volatility/volatility-indexes
+# 4. VIN and OVX, USO
+# 6. Further time-frame tuning
 
 
 # --------------------------------------------------------------------------------------------------
@@ -21,41 +27,28 @@ wait_time = 0
 
 import os, logging, time
 import pandas as pd
-
 import numpy as np
 np.random.seed(seed=seed)
 
 from talib import SMA
-
 import scipy.stats as stats
 from scipy.stats import boxcox
-from scipy.stats.mstats import winsorize
-
 from fastai.imports import *
 from fastai.tabular.all import *
-
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import RepeatedKFold
-from sklearn.ensemble import GradientBoostingRegressor
 from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
-from xgboost import XGBRFRegressor
-
 import matplotlib.pyplot as plt
 import pylab as plot
 import seaborn as sns
 from statsmodels.graphics.gofplots import qqplot as qp
-
 import warnings
 warnings.simplefilter("ignore")
 
 # custom imports
 from fnCommon import setPandas
-from loaders import fnLoadStockPriceData, fnGetEquityPCR
-
 LOG_FILE_NAME = os.path.basename(__file__)
 
 
@@ -161,17 +154,15 @@ def fnVIXPredictor(df):
 # calculate VIX futures contango
 
 def fnVIXFuturesContango(days=2000):
-
     url = "http://vixcentral.com/historical/?days=%s" % days
     df = pd.read_html(url, flavor='bs4', header=0, index_col=0, parse_dates=True)[0]
-
     df=df[:-1]
     df.sort_index(ascending=True,inplace=True)
 
     # convert string percentage types to float
     cols = df.columns.to_list()[-3:]
     for i in cols:
-        df[i]=df[i].str.strip("%").astype(float) / 100
+        df[i]=df[i].str.strip("%").astype(float)/100
 
     cols = df.columns.to_list()[:-3]
     for i in cols:
@@ -198,7 +189,9 @@ def fnVIXFuturesContango(days=2000):
 
     # replace 0% contango days (np.infinity)
     df = df.replace([np.inf, -np.inf], 0)
+
     return df
+
 
 
 # --------------------------------------------------------------------------------------------------
@@ -216,14 +209,15 @@ def fnComputeReturns(df, colPrc='adjClose', tPeriod = None, retType = 'simple'):
 
     else:
         print('Please choose simple or log return type')
+
     return ret
 
 
-# todo:
-# Edit classification bins
 # --------------------------------------------------------------------------------------------------
 # classify simple or log returns
 
+# todo:
+# Edit classification bins
 def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['{}-rtn-1D'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
@@ -258,28 +252,13 @@ def fnClassifyReturns(df, retType = 'simple'):
 
 
 # --------------------------------------------------------------------------------------------------
-# calculate pct change in trading volume
-
-def fnCalculateVolumeChg(ticker='SPY'):
-
-    path = '..\\_data\\stockPrices\\'
-    df = pd.read_csv(path + '{}.csv'.format(ticker), index_col = 'date', parse_dates = True)
-
-    dfVol = df.copy()
-    dfVol['Volume_bps'] = fnComputeReturns(df, colPrc = 'adjVolume', tPeriod = 1, retType = 'simple')
-    dfVol['dVolume'] = dfVol.adjClose * dfVol.adjVolume
-    dfVol['dVolume_bps'] = fnComputeReturns(dfVol, 'dVolume', 1, 'simple')
-
-    return dfVol
-
-
-# --------------------------------------------------------------------------------------------------
 # pull in SPY prices to calculate returns today / tomorrow and bin them
 
 # noinspection DuplicatedCode
-def fnCalculateLaggedRets(ticker='SPY'):
+def fnLoadPriceData(ticker='SPY'):
 
     path = '..\\_data\\stockPrices\\'
+
     df = pd.read_csv(path + '{}.csv'.format(ticker), index_col='date',parse_dates=True)
 
     # compute returns
@@ -294,8 +273,8 @@ def fnCalculateLaggedRets(ticker='SPY'):
     df = df.merge(dfR, left_index = True, right_index = True)
 
     # compute moving averages and rolling z-score
-    # df['adjClose_log'] = np.log(df.adjClose)
-    # df['adjClose_Diff'] = df.adjClose_log - df.adjClose_log.shift(1)
+    # df['Adj_Close_log'] = np.log(df.Adj_Close)
+    # df['Adj_Close_Diff'] = df.Adj_Close_log - df.Adj_Close_log.shift(1)
     df['adjClose_Diff'] = np.log(df.adjClose).diff()
 
     window = 49
@@ -330,6 +309,7 @@ def fnCalculateLaggedRets(ticker='SPY'):
 
     # todo:
     #  adjust these automatically
+
     dfT = dfT.loc[(dfT.index >= '2015-07-23') & (dfT.index <= '2019-10-31')]
     rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= '2015-07-23') & (rtnStdDev.index <= '2019-10-31')]
 
@@ -493,7 +473,7 @@ def fnAggActivityFeed(df1, df2, ticker=None):
     # dfB = pd.concat([df3, df4], axis=1, sort=False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
-    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnCalculateLaggedRets(ticker=ticker)
+    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnLoadPriceData(ticker='SPY')
 
     rtnTodayToTomorrow.index.name = 'Date'
     rtnTodayToTomorrowClassified.index.name = 'Date'
@@ -524,44 +504,29 @@ def fnAggActivityFeed(df1, df2, ticker=None):
 
     dfAgg = add_datepart(dfAgg, 'date')
     dfAgg.drop(columns=['Elapsed'], inplace=True)
-    dfAgg.replace(False,0, inplace=True)
-    dfAgg.replace(True,1, inplace=True)
+    dfAgg.replace(False,0,inplace=True)
+    dfAgg.replace(True,1,inplace=True)
 
     # test_eq(dfAgg.columns[-13:], ['Year', 'Month', 'Week', 'Day', 'Dayofweek', 'Dayofyear', 'Is_month_end', 'Is_month_start',
     #         'Is_quarter_end', 'Is_quarter_start', 'Is_year_end', 'Is_year_start'])
 
-    # add VIX Futures Contango
     # dfContango = fnVIXFuturesContango(days=len(dfAgg))
     dfContango = fnVIXFuturesContango(days=2000)
     dfAgg = pd.merge(dfAgg, dfContango, how='left', left_index=True, right_index=True).fillna(method='ffill')
 
-    # get equity put/call ratio from CBOE
-    dfPCR = fnGetEquityPCR(ticker='EQUITY', endDate=dfAgg.index[-1])
-    # fpath = "..\\_data\\equitypcr.csv"
-    # dfPCR.to_csv(fpath)
-    dfAgg = pd.merge(dfAgg, dfPCR['pcRatio'], how='left', left_index=True, right_index=True)
-
-    # get pctChange in trading volume as a feature
-    dfTrdVol = fnCalculateVolumeChg(ticker=ticker)
-    dfAgg = pd.merge(dfAgg, dfTrdVol, how='left', left_index=True, right_index=True)
-
-    # dfAgg.drop(columns = [
-    #         # 'adjClose_log',
-    #         # 'adjClose_Diff',
-    #         # 'Is_month_end', 'Is_month_start',
-    #         # 'Is_quarter_end', 'Is_quarter_start',
-    #         # 'Is_year_end', 'Is_year_start',
-    #         # 'logRet-VIX_VIX3M',
-    #         # 'logRet-VIX_VIX3M-2d',
-    #         # 'rtnStdDev',
-    #         # 'warning',
-    #         # 'warningSevere',
-    #         # 'Norm_VIX-VIX3M',
-    #         # 'ma-49D-zscore',
-    #         # 'ma-149D-zscore',
-    #         # 'Week',
-    # ],
-    #            inplace = True)
+    dfAgg.drop(columns = [
+            # 'Adj_Close_log',
+            'adjClose_Diff',
+            'Is_month_end', 'Is_month_start',
+            'Is_quarter_end', 'Is_quarter_start',
+            'Is_year_end', 'Is_year_start',
+            # 'logRet-VIX_VIX3M',
+            # 'logRet-VIX_VIX3M-2d',
+            # 'ma-49D-zscore',
+            # 'ma-149D-zscore',
+            # 'Dayofweek',
+    ],
+               inplace = True)
 
     # to remove all sma features:
     # dfAgg=dfAgg.loc[:,dfAgg.columns[-26:]]
@@ -623,8 +588,7 @@ def predict(df, nTrain, nTest, dfS):
     # --------------------------------------------------------------------------------------------------
     # winsorize / feature scaling
 
-    # X_train = X_train.apply(winsorizeData, axis = 0)
-
+    X_train = X_train.apply(winsorizeData, axis = 0)
     maxTrain = X_train.max()
     minTrain = X_train.min()
 
@@ -635,53 +599,46 @@ def predict(df, nTrain, nTest, dfS):
     X_test = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
 
 
+    # --------------------------------------------------------------------------------------------------
+    # test for stationarity
 
-    # # --------------------------------------------------------------------------------------------------
-    # # test for stationarity
-    #
-    # stationarityResults = (stationarity(X_train))
-    # stationarityResults = pd.DataFrame(stationarityResults, index = [0])
-    # stationaryFactors = []
-    # nonStationaryFactors = []
-    #
-    # for i in stationarityResults.columns:
-    #     if stationarityResults[i][0] == 1:
-    #         stationaryFactors.append(i)
-    #     else:
-    #         nonStationaryFactors.append(i)
-    #
-    # print("Number of nonstationary factors = {}".format(len(nonStationaryFactors)))
+    stationarityResults = (stationarity(X_train))
+    stationarityResults = pd.DataFrame(stationarityResults, index = [0])
+    stationaryFactors = []
 
-
+    for i in stationarityResults.columns:
+        if stationarityResults[i][0] == 1:
+            stationaryFactors.append(i)
 
     # colsAppend = ['ma-49D', 'ma-194D', 'ma-194D-zscore',
     #               'ma-309D', 'ma-309D-zscore',
     #               'Year', 'Month', 'Week', 'Dayofyear', 'Is_quarter_start', 'Is_year_end','Is_year_start']
     # stationaryFactors.extend(colsAppend)
 
+    # todo:
+    # append new vix futures contango data to stationarity results
+    # for i in stationarityResults.columns[-5:]:
+    #     if stationarityResults[i][0]==0:
+    #         stationaryFactors.append(i)
 
-    X_test = X_test.drop(['rtnTodayToTomorrow',
-                          'rtnTodayToTomorrowClassified', ]
-                         # + cols
-                         ,
-                         axis = 1)
-    X_train = X_train.drop(['rtnTodayToTomorrow',
-                            'rtnTodayToTomorrowClassified', ]
-                           # + cols
-                           ,
-                           axis = 1)
+    X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
+                                             'rtnTodayToTomorrowClassified', ]
+                                            # + cols
+                                            ,
+                                            axis = 1)
+    X_train = X_train[stationaryFactors].drop(['rtnTodayToTomorrow',
+                                               'rtnTodayToTomorrowClassified', ]
+                                              # + cols
+                                              ,
+                                              axis = 1)
 
 
 # --------------------------------------------------------------------------------------------------
     # Preprocess / Standardize data
 
-    # todo:
-    # sc_X = StandardScaler()
-    # X_train_std = sc_X.fit_transform(X_train)
-    # X_test_std = sc_X.fit_transform(X_test)
-
-    X_train_std = X_train.copy()
-    X_test_std = X_test.copy()
+    sc_X = StandardScaler()
+    X_train_std = sc_X.fit_transform(X_train)
+    X_test_std = sc_X.fit_transform(X_test)
 
     y_train = np.array(y_train).reshape(-1, 1)
     y_test = np.array(y_test).reshape(-1, 1)
@@ -690,28 +647,15 @@ def predict(df, nTrain, nTest, dfS):
     # --------------------------------------------------------------------------------------------------
     # init random forest
 
-    """
-        optional params
-        - max_depth
-        - bootstrap
-        - max_leaf_nodes
-        - warm_start
-
-    """
-
-    RFmodel = RandomForestRegressor(
+    RFmodel = RandomForestRegressor(criterion = 'mse',
+                                    max_features = "auto",
                                     n_estimators = max_n,
-                                    criterion = 'mse',
+                                    # max_leaf_nodes = 2,
+                                    # oob_score = True,
                                     # max_depth=10,
                                     min_samples_leaf = 100,
-                                    max_features = "auto",
-                                    # max_leaf_nodes = 2,
-                                    # bootstrap=False,
-                                    # oob_score = True,
-                                    n_jobs = -1,
                                     random_state = seed,
-                                    # warm_start=True,
-                                    )
+                                    n_jobs = -1)
 
     RFmodel.fit(X_train_std, y_train)
 
@@ -745,9 +689,7 @@ def predict(df, nTrain, nTest, dfS):
 
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     q1signal = np.quantile(predictionsY, 0.25) - 0.000001
-
     dfS.at[df.index[-1], 'q1signal'] = q1signal
-
 
     lastsignal = predictionsY[-1]
     dfS.at[df.index[-1], 'lastsignal'] = lastsignal
@@ -767,9 +709,6 @@ def predict(df, nTrain, nTest, dfS):
         elif (lastsignal > 0.001) & (dfS.at[df.index[-1], 'q1signalRolling'] < lastsignal) & (dfS.at[df.index[-1], 'q1signal'] < dfS.at[df.index[-1], 'q1signalRolling']):
             dfS.at[df.index[-1], 'position'] = -1
 
-        # elif (lastsignal < 0.0009 ) & (dfS.at[df.index[-1], 'q1signalRolling'] > dfS.at[df.index[-1], 'q1signal']*2):
-        #     dfS.at[df.index[-1], 'position'] = -1
-
         elif lastsignal > dfS.at[df.index[-1],'q1signalRolling'] + dfS.at[df.index[-1], 'q1signal']:
             dfS.at[df.index[-1], 'position'] = 1
 
@@ -779,15 +718,16 @@ def predict(df, nTrain, nTest, dfS):
         # elif (lastsignal > (2 * dfS.at[df.index[-1], 'q1signalRolling'])) & (dfS.at[df.index[-1], 'q1signalRolling'] > 0):
         #     dfS.at[df.index[-1], 'position'] = -0.75
 
+
         else:
             dfS.at[df.index[-1], 'position'] = 0
 
 
     print(' ')
-    print('Last signal:\t%.6f' % dfS.at[df.index[-1], 'lastsignal'])
-    print('Q1 signal:\t\t %.6f' % dfS.at[df.index[-1], 'q1signal'])
-    print('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'q1signalRolling'])
-    print('\nCurrent Position: %.2f' % dfS.at[df.index[-1], 'position'])
+    print('Last signal:\t%.6f' % dfS.at[df.index[-1], 'lastsignal'].astype(float))
+    print('Q1 signal:\t\t %.6f' % dfS.at[df.index[-1], 'q1signal'].astype(float))
+    print('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'q1signalRolling'].astype(float))
+    print('\nCurrent Position: %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
     time.sleep(wait_time)
 
     featureImportances = pd.DataFrame(dfFeat)
@@ -828,7 +768,7 @@ def fnComputePortfolioRtn(ticker='SPY', pos=None):
 
     # todo: xlsx formatting here
     # cols = ['signal',
-    #         'adjClose',
+    #         'Adj_Close',
     #         'rtnSPY',
     #         'cRtn-SPY',
     #         'position',
@@ -874,7 +814,7 @@ def fnPlotFeatureImportance(dfFeat):
 # --------------------------------------------------------------------------------------------------
 # plot predicted vs residual
 
-def plotResiduals(y_train, y_train_pred, y_test, y_test_pred):
+def plotResiduals():
 
     plt.scatter(y_train_pred.reshape(-1,1),
                 (y_train_pred.reshape(-1,1) - y_train.reshape(-1,1)),
@@ -929,6 +869,11 @@ if __name__ == '__main__':
     floatFormatter = "{:,.6f}".format
     np.set_printoptions(formatter = {'float_kind':floatFormatter})
 
+    path = '.\\_source\\'
+
+
+    # --------------------------------------------------------------------------------------------------
+
     try:
 
         # load SMA activity data
@@ -940,128 +885,24 @@ if __name__ == '__main__':
 
         # aggregate activity feed data
         # dfAgg = fnAggActivityFeed(dfSpy, dfFutures, dfSpyFactor, dfFuturesFactor)
-
-
-        # download stock price data to csv
-        endDate = pd.to_datetime(datetime.now()).strftime('%Y-%m-%d')
-        dfStk = fnLoadStockPriceData(ticker, startDate = '2012-01-02', endDate = endDate, source= 'tiingo')
-        fpath = "..\\_data\\stockPrices\\{}.csv".format(ticker)
-        dfStk.to_csv(fpath)
-
-        # aggregate feature data
-        dfTotalAgg = fnAggActivityFeed(dfRaw, dfFutures, ticker=ticker)
+        dfAgg = fnAggActivityFeed(dfRaw, dfFutures, ticker='SPY')
 
 
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 
-        # remove first 49 days
-        # dfTotalAgg = dfTotalAgg.loc[dfTotalAgg.index >= '2015-10-21']
-        # dfTotalAgg = dfTotalAgg.loc[dfTotalAgg.index >= '2015-11-07']
+        dfAgg = dfAgg[598 - 450 - 100 + 1:]
 
-        # todo:
-        # dfTotalAgg = dfTotalAgg.loc[dfTotalAgg.index>='2015-10-21']
-
-        # todo:
-        # YOU ARE HERE!!!!!!!!!!!!
-        # dfAgg = dfTotalAgg[598 - 450 - 100 + 1:]
-        dfAgg = dfTotalAgg.copy()
-        dfAgg = dfAgg.loc[dfAgg.index >= '2015-10-21']
-
-
-        # test_set = dfTotalAgg[len(dfTotalAgg.loc[dfTotalAgg.index <= '2018-01-01']):]
-        test_set = dfTotalAgg[len(dfTotalAgg.loc[dfTotalAgg.index < '2017-12-11']):]
-        # train_set = dfTotalAgg[:len(dfTotalAgg) - len(test_set)]
-
-        # set nTest (rolling every x days)
-        nTest = 100
-
-        # todo:
-        # nTrain = len(train_set) - nTest + 1
         # nTrain = 503
         nTrain = 440
+        nTest = 100
 
-        # dfAgg = dfTotalAgg.copy()
-
-        # dfS = pd.DataFrame(index = [dfAgg[nTrain - 1 + nTest:].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-        # dfS = pd.DataFrame(index = [test_set.index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-        # dfS = pd.DataFrame(index = [dfAgg[539:].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-        # dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index>='2020-01-02'].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-
+        # todo: starts 2017-12-11
+        dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index>'2017-12-31'].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
         dfS = pd.DataFrame(index = [dfAgg[539:].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-
-
-
-
-        # dfS = pd.DataFrame(index = [dfAgg[0:(nTrain+nTest):].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-        # dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index>'2017-12-31'].index], columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-        # dfS = pd.DataFrame(index = dfAgg[539:].index, columns = ['q1signal', 'q1signalRolling', 'lastsignal', 'position'])
-
 
         dpred = { }
         dfFeat = { }
-
-        dfAgg.drop(columns = [
-                'adjVolume_y', 'adjVolume_x', 'adjClose',
-                'Is_month_end', 'Is_month_start',
-                'Is_quarter_end', 'Is_quarter_start',
-                'Is_year_end', 'Is_year_start',
-                'warning',
-                'warningSevere',
-                'Year', 'Week',
-                # 'Day',
-                'Month',
-                'Dayofweek',
-                # 'Dayofyear',
-                 'ma-99D-zscore',
-
-                # todo:
-                # 'VIX_Close',
-
-                'Norm_VIX9D-VIX3M',
-                'Contango 7/4',
-                'Con 7/4 div 3',
-                'ma-149D-zscore',
-                # 'rtnStdDev',
-                'ma-49D-zscore',
-                # 'Norm_VIX-VIX3M',
-                 'Contango 2/1',
-                 # 'ma-99D',
-
-                # todo:
-                #  'SPY:s_dispersion_z',
-                #  'ES_F:ewm_volume_base_s',
-                #  'ES_F:volume_base_s_delta',
-
-
-                 'vix-log-rtn-6D',
-                 # 'pcRatio',
-                 # 'SPY:raw_s_MACD_ewma7-ewma14',
-
-        ], inplace = True)
-
-
-        dfStationary = dfAgg.apply(winsorizeData, axis = 0)
-
-
-
-        # --------------------------------------------------------------------------------------------------
-        # test for stationarity
-
-        stationarityResults = (stationarity(dfStationary))
-        stationarityResults = pd.DataFrame(stationarityResults, index = [0])
-        stationaryFactors = []
-        nonStationaryFactors = []
-
-        for i in stationarityResults.columns:
-            if stationarityResults[i][0] == 1:
-                stationaryFactors.append(i)
-            else:
-                nonStationaryFactors.append(i)
-
-
-        dfAgg = dfStationary[stationaryFactors]
-
 
         for i in range(0, len(dfAgg) - nTrain - nTest, 1):
             dpred, dfFeat = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest, dfS)
@@ -1083,6 +924,8 @@ if __name__ == '__main__':
 
         # todo:
         # plot cRet portfolio vs cRet SPY
+
+
 
 
 
