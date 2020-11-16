@@ -6,7 +6,7 @@
 # created by Joseph Loss on 6/22/2020
 
 ticker = 'SPY'
-max_n = 500
+max_n = 1001
 seed = 42
 wait_time = 0
 
