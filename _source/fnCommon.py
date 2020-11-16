@@ -112,7 +112,7 @@ def setLogging(LOGGING_DIRECTORY = os.path.join('.\\_source\\_logging', dt.today
 # --------------------------------------------------------------------------------------------------
 # set up output filepath
 
-def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\results\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
+def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\output\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
 
     if not OUTPUT_FILE_NAME:
         OUTPUT_FILE_NAME = ''
@@ -136,14 +136,13 @@ def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\results\\'), OUTPUT_SU
 # --------------------------------------------------------------------------------------------------
 # fnUploadSQL
 
-
 def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', colNames=None, unlinkFile=True):
-
 
     setLogging(LOG_FILE_NAME = 'upload %s.%s-%s.txt' % (dbName, tblName, os.getpid()), level='INFO')
 
     curTime = dt.time(dt.now()).strftime("%H_%M_%S")
     tmpFile = setOutputFilePath(OUTPUT_SUBDIRECTORY = 'upload', OUTPUT_FILE_NAME = '%s %s-%s.txt' % (tblName, curTime, os.getpid()))
+    c = conn.cursor()
 
     logging.info("Creating temp file: %s" % tmpFile)
     colsSQL = pd.read_sql('SELECT * FROM %s.%s LIMIT 0;' % (dbName, tblName), conn).columns.tolist()
@@ -163,7 +162,7 @@ def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', c
                         (tmpFile.replace('\\','/'), mode, dbName, tblName, colsDF)
 
                 logging.debug(query)
-                rv = conn.execute(query)
+                rv = c.execute(query)
                 logging.info("Number of rows affected: %s" % len(df))
                 return rv
 
@@ -184,7 +183,7 @@ def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', c
             (tmpFile.replace('\\','/'), mode, dbName, tblName)
 
     logging.debug(query)
-    rv = conn.execute(query)
+    rv = c.execute(query)
     logging.info("Number of rows affected: %s" % len(df))
 
     # if (unlinkFile.lower() == 'yes') | (unlinkFile.lower() == 'y'):
