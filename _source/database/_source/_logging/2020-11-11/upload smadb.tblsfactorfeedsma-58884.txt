@@ -1,0 +1,2 @@
+11/11/2020 12:42:51 AM - INFO - tblsfactorfeedsma 00_42_51-58884.txt saved in: .\output\upload
+11/11/2020 12:42:51 AM - INFO - Creating temp file: .\output\upload\tblsfactorfeedsma 00_42_51-58884.txt

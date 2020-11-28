@@ -79,7 +79,7 @@ def fnGetEquityPCR(ticker='EQUITY', endDate=None):
 
             data[idx] = data[idx].loc[data[idx].index.str.contains('{}'.format(ticker))]
             data[idx].index = ['{}'.format(idx)]
-            data[idx].index.name = 'Date'
+            data[idx].index.name = 'date'
 
             tmp = pd.read_html(
                     "https://markets.cboe.com/us/options/market_statistics/daily/?mkt=cone&dt=%s" % idx
@@ -87,7 +87,7 @@ def fnGetEquityPCR(ticker='EQUITY', endDate=None):
                     columns = { 'CALL':'cVol', 'PUT':'pVol', 'TOTAL':'tVol' })
 
             tmp.index = ['{}'.format(idx)]
-            tmp.index.name = 'Date'
+            tmp.index.name = 'date'
 
             data[idx] = data[idx].merge(tmp[['pVol', 'cVol', 'tVol']],
                                         left_index=True,
@@ -96,7 +96,7 @@ def fnGetEquityPCR(ticker='EQUITY', endDate=None):
             print('{} pcRatio loaded..'.format(idx))
             time.sleep(3)
 
-        dfP.index.name = 'Date'
+        dfP.index.name = 'date'
         dfP.rename(columns={'pcr':'pcRatio'},inplace=True)
         cols = ['cVol', 'pVol', 'tVol', 'pcRatio']
         dfP = dfP[cols]
@@ -108,7 +108,7 @@ def fnGetEquityPCR(ticker='EQUITY', endDate=None):
 
         # append new data
         df = df.append(dfP)
-        df.index.name = 'Date'
+        df.index.name = 'date'
         df.to_csv(fpath)
 
     return df
