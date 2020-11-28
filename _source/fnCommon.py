@@ -1,14 +1,19 @@
 # --------------------------------------------------------------------------------------------------
+# fnCommon.py
+#
 # created by joe.loss
-#
-#
 # --------------------------------------------------------------------------------------------------
+# Module Imports
+
 import os, sys
 from datetime import datetime as dt
 import pandas as pd
 import numpy as np
 import logging
 from importlib import reload
+import mysql.connector
+from mysql.connector.constants import ClientFlag
+import mysql.connector.connection
 
 
 # --------------------------------------------------------------------------------------------------
@@ -48,8 +53,23 @@ def setPandas():
 # --------------------------------------------------------------------------------------------------
 # connect to mysql database
 
-def fnOdbcConnect(dsn):
-    conn = pyodbc.connect(dsn = dsn, autocommit = 'True')
+def fnOdbcConnect(dbName='smadb'):
+
+    config = {
+        'user':              'root',
+        'password':          'Quant1984!',
+        'host':              '127.0.0.1',
+        # 'client_flags':      [ClientFlag.SSL, ClientFlag.LOCAL_FILES],
+        # 'ssl_ca':            os.path.abspath('..\\..\\.\\_auth\\ssl\\server-ca.pem'),
+        # 'ssl_cert':          os.path.abspath('..\\..\\.\\_auth\\ssl\\client-cert.pem'),
+        # 'ssl_key':           os.path.abspath('..\\..\\.\\_auth\\ssl\\client-key.pem'),
+        'autocommit':        True,
+        'allow_local_infile':1,
+        'database':          '%s' % dbName
+}
+
+    conn = mysql.connector.connect(**config)
+
     return conn
 
 
@@ -87,7 +107,7 @@ def fnCreateBuySellpos(side):
 # --------------------------------------------------------------------------------------------------
 # set up logging
 
-def setLogging(LOGGING_DIRECTORY = os.path.join('.\\_source\\_logging', dt.today().strftime('%Y-%m-%d')), LOG_FILE_NAME = None, level = 'INFO'):
+def setLogging(LOGGING_DIRECTORY = os.path.join('..\\logging\\', dt.today().strftime('%Y-%m-%d')), LOG_FILE_NAME = None, level = 'INFO'):
 
     # reloads logging (useful for iPython only)
     reload(logging)
@@ -112,7 +132,7 @@ def setLogging(LOGGING_DIRECTORY = os.path.join('.\\_source\\_logging', dt.today
 # --------------------------------------------------------------------------------------------------
 # set up output filepath
 
-def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\results\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
+def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('..\\output\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
 
     if not OUTPUT_FILE_NAME:
         OUTPUT_FILE_NAME = ''
@@ -136,14 +156,13 @@ def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\results\\'), OUTPUT_SU
 # --------------------------------------------------------------------------------------------------
 # fnUploadSQL
 
-
 def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', colNames=None, unlinkFile=True):
-
 
     setLogging(LOG_FILE_NAME = 'upload %s.%s-%s.txt' % (dbName, tblName, os.getpid()), level='INFO')
 
     curTime = dt.time(dt.now()).strftime("%H_%M_%S")
     tmpFile = setOutputFilePath(OUTPUT_SUBDIRECTORY = 'upload', OUTPUT_FILE_NAME = '%s %s-%s.txt' % (tblName, curTime, os.getpid()))
+    c = conn.cursor()
 
     logging.info("Creating temp file: %s" % tmpFile)
     colsSQL = pd.read_sql('SELECT * FROM %s.%s LIMIT 0;' % (dbName, tblName), conn).columns.tolist()
@@ -163,8 +182,8 @@ def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', c
                         (tmpFile.replace('\\','/'), mode, dbName, tblName, colsDF)
 
                 logging.debug(query)
-                rv = conn.execute(query)
-                logging.info("Number of rows affected: %s" % len(df))
+                rv = c.execute(query)
+                logging.debug("Number of rows affected: %s" % len(df))
                 return rv
 
     # check columns in db table vs dataframe
@@ -184,7 +203,7 @@ def fnUploadSQL(df=None, conn=None, dbName=None, tblName=None, mode='REPLACE', c
             (tmpFile.replace('\\','/'), mode, dbName, tblName)
 
     logging.debug(query)
-    rv = conn.execute(query)
+    rv = c.execute(query)
     logging.info("Number of rows affected: %s" % len(df))
 
     # if (unlinkFile.lower() == 'yes') | (unlinkFile.lower() == 'y'):
