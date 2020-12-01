@@ -18,8 +18,6 @@ import mysql.connector.connection
 
 # --------------------------------------------------------------------------------------------------
 # pandas settings
-import pyodbc
-
 
 def setPandas():
 
@@ -107,7 +105,7 @@ def fnCreateBuySellpos(side):
 # --------------------------------------------------------------------------------------------------
 # set up logging
 
-def setLogging(LOGGING_DIRECTORY = os.path.join('..\\logging\\', dt.today().strftime('%Y-%m-%d')), LOG_FILE_NAME = None, level = 'INFO'):
+def setLogging(LOGGING_DIRECTORY = os.path.join('.\\logging\\', dt.today().strftime('%Y-%m-%d')), LOG_FILE_NAME = None, level = 'INFO'):
 
     # reloads logging (useful for iPython only)
     reload(logging)
@@ -132,7 +130,7 @@ def setLogging(LOGGING_DIRECTORY = os.path.join('..\\logging\\', dt.today().strf
 # --------------------------------------------------------------------------------------------------
 # set up output filepath
 
-def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('..\\output\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
+def setOutputFilePath(OUTPUT_DIRECTORY = os.path.join('.\\output\\'), OUTPUT_SUBDIRECTORY=None, OUTPUT_FILE_NAME=None):
 
     if not OUTPUT_FILE_NAME:
         OUTPUT_FILE_NAME = ''

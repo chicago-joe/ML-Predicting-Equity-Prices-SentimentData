@@ -5,8 +5,6 @@
 # --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 6/22/2020
 
-
-
 ticker = 'SPY'
 max_n = 2500
 # testStart = '2017-12-31'
@@ -33,27 +31,16 @@ np.random.seed(seed = seed)
 import os, logging, time
 from datetime import timedelta
 from datetime import datetime as dt
-import pandas as pd
-import mysql.connector
-import mysql.connector.connection
 from talib import SMA, ATR
 import warnings
 warnings.simplefilter("ignore")
 
-import scipy.stats as stats
-from scipy.stats import boxcox
-from scipy.stats.mstats import winsorize
-from fastai.imports import *
 from fastai.tabular.all import *
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, explained_variance_score
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import RepeatedKFold
-from sklearn.ensemble import GradientBoostingRegressor
 from scipy.stats.mstats import winsorize
 from statsmodels.tsa.stattools import adfuller
-from xgboost import XGBRFRegressor
 
 import matplotlib.pyplot as plt
 import pylab as plot
@@ -62,7 +49,6 @@ from statsmodels.graphics.gofplots import qqplot as qp
 
 # custom imports
 from fnCommon import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
-from loaders import fnLoadStockPriceData, fnGetEquityPCR
 
 LOG_FILE_NAME = os.path.basename(__file__)
 
@@ -351,7 +337,7 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
             SELECT * 
             FROM smadb.tblactivityfeedsma 
             WHERE ticker_tk = '%s' 
-            AND date >= '%s'
+            AND timestampET >= '%s'
             ;   
         """ % (ticker, startDate)
 
@@ -363,7 +349,8 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
     conn.disconnect()
     conn.close()
 
-    df_temp.sort_values('date', inplace=True)
+    df_temp.sort_values('timestampET', inplace=True)
+
     # # df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
     #
     # df_datetime = pd.DataFrame(columns = ['Date', 'Time'])
@@ -377,17 +364,22 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
     dfAgg = df_temp.copy()
 
     # filtering based on trading hours and excluding weekends
-    dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
-    dfAgg = dfAgg.loc[(dfAgg['center-date'].dt.dayofweek != 5) & (dfAgg['center-date'].dt.dayofweek != 6)]
-    
-    # todo:
-    # change time to 15:55:00
-    # dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
-    dfAgg = dfAgg[(dfAgg['center-time'] >= '09:30:00') & (dfAgg['center-time'] <= '16:00:00')]
+    # dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
+    # dfAgg['center-date'] = pd.to_datetime(dfAgg['center-date'])
+
+    dfAgg = dfAgg.loc[(dfAgg['timestampET'].dt.dayofweek != 5) & (dfAgg['timestampET'].dt.dayofweek != 6)]
+
+    dfAgg['Time'] = dfAgg['timestampET'].dt.strftime('%H:%M:%S')
+    dfAgg['Date'] = dfAgg['timestampET'].dt.strftime('%Y-%m-%d')
+
+    # dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]      # 69.75% cumulative ret
+    # dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]
+    dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
+
 
     # exclude weekends and drop empty columns
     dfAgg = dfAgg.dropna(axis = 'columns')
-    dfAgg = dfAgg.drop(columns = ['ticker_tk', 'date', 'description',
+    dfAgg = dfAgg.drop(columns = ['ticker_tk', 'date', 'timestampET', 'description',
                                   'center-date', 'center-time', 'center-time-zone',
                                   'raw-s-delta', 'volume-delta'])
 
@@ -605,7 +597,7 @@ def predict(df, nTrain, nTest, dfS):
     maxTrain = X_train.max()
     minTrain = X_train.min()
 
-    conditions = [(X_test < minTrain), (X_test > maxTrain)]
+    conditions = [(X_test.values < minTrain.values), (X_test.values > maxTrain.values)]
     choices = [minTrain, maxTrain]
     tmp = np.select(conditions, choices, default = X_test)
 

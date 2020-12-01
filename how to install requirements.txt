@@ -3,7 +3,7 @@ python -m pip install -U pip setuptools wheel
 
 python -m pip install torch==1.7.0+cu101 torchvision==0.8.1+cu101 torchaudio===0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
 
-python -m pip install matplotlib xlrd yfinance tiingo fastai ipython ipython-genutils ipywidgets pandas numpy sklearn scipy statsmodels pytz python-dateutil seaborn requests quandl polygon-api-client pathlib pandas-market-calendars pandas-datareader openpyxl ipykernel ib-insync mysql-connector-python h5py tables empyrical cython datetime beautifulsoup4
+python -m pip install matplotlib xlrd yfinance tiingo fastai ipython ipython-genutils ipywidgets pandas numpy==1.19.3 sklearn scipy statsmodels pytz python-dateutil seaborn requests quandl polygon-api-client pathlib pandas-market-calendars pandas-datareader openpyxl ipykernel ib-insync mysql-connector-python h5py tables empyrical cython datetime beautifulsoup4 html5lib
 
 
 download TA-Lib here:
