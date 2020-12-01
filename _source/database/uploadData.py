@@ -14,14 +14,12 @@ from fnCommon import setPandas, setLogging, setOutputFilePath, fnUploadSQL, fnOd
 from datetime import datetime as dt
 import numpy as np
 import json, csv, requests
-import mysql.connector
-from mysql.connector.constants import ClientFlag
-import mysql.connector.connection
 
 LOG_FILE_NAME = os.path.basename(__file__)
 LOG_LEVEL = 'DEBUG'
 
 dataPath = '.\\_source\\_data\\activityFeed'
+# dataPath = 'C:\\Users\\jloss\\Dropbox\\Coding\\SMA Data Upload\\Activity Feed Data\\tar'
 
 
 # --------------------------------------------------------------------------------------------------
@@ -119,20 +117,21 @@ if __name__=='__main__':
 
     setPandas()
     setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
+    # setLogging(LOG_FILE_NAME = 'uploadData - tmp.log', level = LOG_LEVEL)
 
 
     try:
 
         # --------------------------------------------------------------------------------------------------
         # iterate through SMA text files and upload data to SMA Activity Feed table
-        #
+
         # dataPath = '..\\.\\_data\\activityFeed'
-        # files = glob.glob(dataPath + '\\**\\*.txt', recursive = True)
-        #
+        files = glob.glob(dataPath + '\\**\\*.txt', recursive = True)
+
         # # get unique tickers to pull and load stock price data
-        # serTickers = pd.Series(files).str.rstrip('.txt').str.rsplit('\\', expand = True)[5]
-        # serTickers.name = 'ticker_tk'
-        # reqTickers = serTickers.unique().tolist()
+        serTickers = pd.Series(files).str.rstrip('.txt').str.rsplit('\\', expand = True)[9]
+        serTickers.name = 'ticker_tk'
+        reqTickers = serTickers.unique().tolist()
 
 
         q = """select distinct ticker_tk from smadb.tblactivityfeedsma"""
@@ -162,32 +161,311 @@ if __name__=='__main__':
         fnUploadSQL(dfStk, conn, 'smadb', 'tblsecuritypricesyahoo','REPLACE',None,True)
         conn.close()
 
+
         # --------------------------------------------------------------------------------------------------
-        # upload sma data
+        # upload sma activity feed data
 
         total = len(files)
         count = 0
         lstFiles = []
 
+        dfRank = pd.DataFrame()
+        dfRank = pd.DataFrame(columns = ['ticker_tk',
+                                         'date',
+                                         'description',
+                                         'sector',
+                                         'industry',
+                                         'raw-s',
+                                         's-volume',
+                                         's-dispersion',
+                                         'raw-s-delta',
+                                         'volume-delta',
+                                         'center-date',
+                                         'center-time',
+                                         'center-time-zone'])
+
         for file in files:
+            count += 1
+
             df = pd.read_csv(file, skiprows = 5, sep = '\t', dtype={'ticker':'str'})
+            df.rename(columns = { 'ticker':'ticker_tk' }, inplace = True)
+
+
             if not df.empty:
-                df.rename(columns = { 'ticker':'ticker_tk' }, inplace = True)
+                ticker = df['ticker_tk'][0]
 
-                if df['ticker_tk'].unique().tolist()[0].endswith('_F'):
-                    df['ticker_at'] = 'FUT'
-                else:
-                    df['ticker_at'] = 'EQT'
+                if ticker in ['ACWI', 'AFK', 'AGG',
+                                                         'AGQ',
+                                                         'ALT',
+                                                         'AMLP',
+                                                         'AND',
+                                                         'ARGT',
+                                                         'ASHR',
+                                                         'AUD',
+                                                         'BAL',
+                                                         'BBH',
+                                                         'BIB',
+                                                         'BIL',
+                                                         'BIS',
+                                                         'BKLN',
+                                                         'BND',
+                                                         'BNO',
+                                                         'BOIL',
+                                                         'BRZU',
+                                                         'CAD',
+                                                         'CNY',
+                                                         'COPX',
+                                                         'CORN',
+                                                         'CURE',
+                                                         'CYB',
+                                                         'DBA',
+                                                         'DBB',
+                                                         'DBC',
+                                                         'DBO',
+                                                         'DGAZ',
+                                                         'DGL',
+                                                         'DGLD',
+                                                         'DGP',
+                                                         'DIA',
+                                                         'DIG',
+                                                         'DNO',
+                                                         'DOG',
+                                                         'DRN',
+                                                         'DRR',
+                                                         'DSLV',
+                                                         'DTO',
+                                                         'DUST',
+                                                         'DXJ',
+                                                         'EDC',
+                                                         'EDV',
+                                                         'EDZ',
+                                                         'EEM',
+                                                         'EFA',
+                                                         'ELD',
+                                                         'EMB',
+                                                         'EMG',
+                                                         'EPI',
+                                                         'ERO',
+                                                         'ERX',
+                                                         'ERY',
+                                                         'ES_F',
+                                                         'EWA',
+                                                         'EWG',
+                                                         'EWH',
+                                                         'EWI',
+                                                         'EWJ',
+                                                         'EWT',
+                                                         'EWU',
+                                                         'EWW',
+                                                         'EWY',
+                                                         'EWZ',
+                                                         'EZU',
+                                                         'FAN',
+                                                         'FAS',
+                                                         'FAZ',
+                                                         'FBT',
+                                                         'FCG',
+                                                         'FDN',
+                                                         'FEZ',
+                                                         'FM',
+                                                         'FXI',
+                                                         'GASL',
+                                                         'GBB',
+                                                         'GDX',
+                                                         'GDXJ',
+                                                         'GLD',
+                                                         'GLDI',
+                                                         'GLL',
+                                                         'GREK',
+                                                         'GSG',
+                                                         'GXC',
+                                                         'HEDJ',
+                                                         'HYG',
+                                                         'IAU',
+                                                         'IBB',
+                                                         'IEF',
+                                                         'IEI',
+                                                         'IEMG',
+                                                         'IEV',
+                                                         'IGN',
+                                                         'IGV',
+                                                         'IHI',
+                                                         'IJR',
+                                                         'ILF',
+                                                         'INDA',
+                                                         'INDY',
+                                                         'INR',
+                                                         'IPO',
+                                                         'ITB',
+                                                         'IVV',
+                                                         'IWF',
+                                                         'IWM',
+                                                         'IYR',
+                                                         'JDST',
+                                                         'JJC',
+                                                         'JNK',
+                                                         'JNUG',
+                                                         'JO',
+                                                         'JYN',
+                                                         'KBE',
+                                                         'KOL',
+                                                         'KOLD',
+                                                         'KRE',
+                                                         'LIT',
+                                                         'LQD',
+                                                         'MCHI',
+                                                         'MDY',
+                                                         'MOO',
+                                                         'MORL',
+                                                         'MTUM',
+                                                         'MUB',
+                                                         'NGE',
+                                                         'NKY',
+                                                         'NOBL',
+                                                         'NUGT',
+                                                         'OIH',
+                                                         'OIL',
+                                                         'OLEM',
+                                                         'OLO',
+                                                         'ONG',
+                                                         'PALL',
+                                                         'PFF',
+                                                         'PGF',
+                                                         'PGJ',
+                                                         'PIN',
+                                                         'PKB',
+                                                         'PPLT',
+                                                         'PSQ',
+                                                         'PST',
+                                                         'QID',
+                                                         'QLD',
+                                                         'QQQ',
+                                                         'REM',
+                                                         'RSP',
+                                                         'RSX',
+                                                         'RTH',
+                                                         'RUSL',
+                                                         'RUSS',
+                                                         'RWM',
+                                                         'SCO',
+                                                         'SDOW',
+                                                         'SDS',
+                                                         'SGG',
+                                                         'SGOL',
+                                                         'SH',
+                                                         'SHY',
+                                                         'SIL',
+                                                         'SILJ',
+                                                         'SIVR',
+                                                         'SLV',
+                                                         'SLX',
+                                                         'SMH',
+                                                         'SOCL',
+                                                         'SOXL',
+                                                         'SPLV',
+                                                         'SPXS',
+                                                         'SPXU',
+                                                         'SPY',
+                                                         'SQQQ',
+                                                         'SSO',
+                                                         'TAN',
+                                                         'TBF',
+                                                         'TBT',
+                                                         'TIP',
+                                                         'TLH',
+                                                         'TLT',
+                                                         'TMF',
+                                                         'TMV',
+                                                         'TNA',
+                                                         'TQQQ',
+                                                         'TTT',
+                                                         'TUR',
+                                                         'TVIX',
+                                                         'TWM',
+                                                         'TZA',
+                                                         'UCO',
+                                                         'UDN',
+                                                         'UDOW',
+                                                         'UGA',
+                                                         'UGAZ',
+                                                         'UGL',
+                                                         'UGLD',
+                                                         'ULE',
+                                                         'UNG',
+                                                         'UNL',
+                                                         'UPRO',
+                                                         'URA',
+                                                         'URE',
+                                                         'USD',
+                                                         'USDU',
+                                                         'USL',
+                                                         'USLV',
+                                                         'USO',
+                                                         'UST',
+                                                         'UUP',
+                                                         'UVXY',
+                                                         'UWM',
+                                                         'UWTI',
+                                                         'VDE',
+                                                         'VEA',
+                                                         'VGK',
+                                                         'VGLT',
+                                                         'VGT',
+                                                         'VIXY',
+                                                         'VNQ',
+                                                         'VOO',
+                                                         'VOX',
+                                                         'VT',
+                                                         'VTI',
+                                                         'VWO',
+                                                         'VXX',
+                                                         'WEAT',
+                                                         'WEET',
+                                                         'XAGUSD',
+                                                         'XAUUSD',
+                                                         'XBI',
+                                                         'XES',
+                                                         'XHB',
+                                                         'XIV',
+                                                         'XLB',
+                                                         'XLE',
+                                                         'XLF',
+                                                         'XLI',
+                                                         'XLK',
+                                                         'XLP',
+                                                         'XLU',
+                                                         'XLV',
+                                                         'XLY',
+                                                         'XME',
+                                                         'XOP',
+                                                         'XRT',
+                                                         'YANG',
 
-            # path='C:/Users/jloss/PyCharmProjects/ML-Predicting-Equity-Prices-SentimentData/df.csv'
-            # q="""LOAD DATA LOCAL INFILE '%s' REPLACE INTO TABLE smadb.tblactivitydatasma LINES TERMINATED BY '\r\n'""" % path
-                lstFiles.append(df)
-                count += 1
-                pctComplete = count / total
-                # logging.debug('{:.2%} percent complete..'.format(pctComplete))
+                                                         'YCS',
+                                                            'YINN', 'ZIV', 'ZROZ']:
+
+                    df['ticker_at'] = np.where(df['ticker_tk'].str.endswith('_F'), 'FUT', 'EQT')
+
+                    dfRank = dfRank.append(df, ignore_index = True)
+                    pctComplete = count / total
+                    logging.debug('{:.2%} percent complete..'.format(pctComplete))
+
+
+        dfRank['timestampET'] = pd.to_datetime(dfRank['center-date'] + ' ' + dfRank['center-time'])
+
+
+        # --------------------------------------------------------------------------------------------------
+        # drop tickers that aren't full rank:
+
+        nMax = dfRank.groupby('ticker_tk')['center-date'].nunique().max()
+        dfRank = dfRank.groupby('ticker_tk')['center-date'].nunique().reset_index()
+        dfRank = dfRank.loc[dfRank['center-date'] >= nMax / 2]
+        tickersHalfRank = dfRank.ticker_tk.unique().tolist()
+        df = df.loc[df.ticker_tk.isin(tickersHalfRank)]
 
         conn = fnOdbcConnect('smadb')
         frame = pd.concat(lstFiles, axis=0, ignore_index=True)
+
         fnUploadSQL(df = frame, conn = conn,
                         dbName = 'smadb',
                         tblName = 'tblactivityfeedsma',
@@ -198,6 +476,9 @@ if __name__=='__main__':
         conn.disconnect()
         conn.close()
 
+
+        # --------------------------------------------------------------------------------------------------
+        # upload SMA s-factor feed data
 
         # dataPath = '.\\_source\\_data\\sFactorFeed'
 
@@ -221,6 +502,15 @@ if __name__=='__main__':
             # logging.debug('{:.2%} percent complete..'.format(pctComplete))
 
 
+        # --------------------------------------------------------------------------------------------------
+        # drop tickers that aren't full rank:
+
+        nMax = df.groupby('ticker_tk')['center-date'].nunique().max()
+        dfRank = df.groupby('ticker_tk')['center-date'].nunique().reset_index()
+        dfRank = dfRank.loc[dfRank['center-date'] >= nMax / 2]
+        tickersHalfRank = dfRank.ticker_tk.unique().tolist()
+        df = df.loc[df.ticker_tk.isin(tickersHalfRank)]
+
         conn = fnOdbcConnect('smadb')
         frame = pd.concat(lstFiles, axis=0, ignore_index=True)
 
@@ -231,42 +521,38 @@ if __name__=='__main__':
                         colNames = None,
                         unlinkFile = True)
 
-
-        # dataPath = '.\\_source\\_data\\equitypcr.csv'
         conn.disconnect()
         conn.close()
-
 
 
         # --------------------------------------------------------------------------------------------------
 
         logging.info('----- END PROGRAM -----')
 
-
     except Exception as e:
         print(e)
 
-    # finally:
-        # if conn.is_connected():
-        #     conn.close()
 
-df = pd.DataFrame(index=pd.RangeIndex(0,500000),columns=['v','vw','o','c','h','l','t','n'])
+# --------------------------------------------------------------------------------------------------
+# polygon minute data
+
+df = pd.DataFrame(index = pd.RangeIndex(0, 500000), columns = ['v', 'vw', 'o', 'c', 'h', 'l', 't', 'n'])
 key = 'l_sMUCamAEWkIVdW5znVVzRFgsgZBaez'
 r = requests.get('https://api.polygon.io/v2/aggs/ticker/SPY/range/1/minute/2017-12-01/2019-11-02?apiKey=%s&limit=50000' % key)
-data=r.json()['results']
+data = r.json()['results']
 
 df = pd.DataFrame(data).set_index('t')
 
-last=pd.to_datetime(df.index[-1],origin='unix',unit='ms')
+last = pd.to_datetime(df.index[-1], origin = 'unix', unit = 'ms')
 lastDay = last.strftime('%Y-%m-%d')
 r = requests.get('https://api.polygon.io/v2/aggs/ticker/SPY/range/1/minute/%s/2019-11-02?apiKey=%s&limit=50000' % (lastDay, key))
-data=r.json()['results']
+data = r.json()['results']
 df2 = pd.DataFrame(data).set_index('t')
 df = df.append(df2)
-df = df.loc[df.index.duplicated()==False]
+df = df.loc[df.index.duplicated() == False]
 
-df.reset_index(inplace=True)
-df['ticker_tk']='SPY'
-df['ticker_at']='EQT'
-df.rename(columns={'t':'date','v':'volume','vw':'vwap','c':'adjClose','h':'adjHigh','o':'adjOpen','l':'adjLow'},inplace=True)
-df.date=pd.to_datetime(df.date,origin='unix',unit='ms')
+df.reset_index(inplace = True)
+df['ticker_tk'] = 'SPY'
+df['ticker_at'] = 'EQT'
+df.rename(columns = { 't':'date', 'v':'volume', 'vw':'vwap', 'c':'adjClose', 'h':'adjHigh', 'o':'adjOpen', 'l':'adjLow' }, inplace = True)
+df.date = pd.to_datetime(df.date, origin = 'unix', unit = 'ms')
