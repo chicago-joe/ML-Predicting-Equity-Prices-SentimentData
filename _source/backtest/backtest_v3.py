@@ -372,9 +372,9 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
     dfAgg['Time'] = dfAgg['timestampET'].dt.strftime('%H:%M:%S')
     dfAgg['Date'] = dfAgg['timestampET'].dt.strftime('%Y-%m-%d')
 
-    # dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]      # 69.75% cumulative ret
+    dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]      # 69.75% cumulative ret
     # dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]
-    dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
+    # dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
 
 
     # exclude weekends and drop empty columns
@@ -873,7 +873,7 @@ if __name__ == '__main__':
     setPandas()
     setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
 
-    path = '_source\\'
+    path = '..\\'
 
     # set numpy float format
     floatFormatter = "{:,.6f}".format
@@ -924,7 +924,7 @@ if __name__ == '__main__':
 
         dfP = fnComputePortfolioRtn(dfStk=dfStk, pos=dpred)
 
-        logging.info('Mean Feature Importance:\n', dfFeat.mean(axis = 1).sort_values(ascending = False))
+        logging.info('Mean Feature Importance:\n{}'.format(dfFeat.mean(axis = 1).sort_values(ascending = False)))
 
         # plot feature importance
         fnPlotFeatureImportance(dfFeat = dfFeat)
