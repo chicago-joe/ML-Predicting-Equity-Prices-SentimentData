@@ -1,14 +1,27 @@
-# IE598 Project - Joseph Loss
-# An algorithmic trading trading strategy for IBroker's Python API.
+# main.py
+#
+#
+# Predicting SPY prices using SMA data for IBroker's Python API.
 #
 # Original Templates, Classes, and Parameters located at:
 # https://github.com/jamesmawm/High-Frequency-Trading-Model-with-IB
 #
+# created by joe.loss, November 2020
 # --------------------------------------------------------------------------------------------------
-#
+# Parameters
 
+ticker = 'SPY'
+ticker_at = 'EQT'
+LOG_LEVEL = 'INFO'
+
+# --------------------------------------------------------------------------------------------------
+# Module Imports
+
+import os, sys, logging
+import pandas as pd
+import numpy as np
+from datetime import datetime as dt
 from ibClient import HftModel1
-import os
 from ib_insync import Stock, ContFuture, Future, Forex
 from fnCommon import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
 
@@ -17,6 +30,7 @@ from fnCommon import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
 # create IB contract symbiology
 
 def fnCreateIBSymbol(ticker_tk=None, ticker_at=None):
+
     if not ticker_tk:
         ticker_tk='SPY'
     if not ticker_at:
@@ -28,6 +42,8 @@ def fnCreateIBSymbol(ticker_tk=None, ticker_at=None):
         symIB = [ticker_tk, Stock(ticker_tk, 'SMART', 'USD')]
     elif ticker_at == 'FUT':
         symIB = [ticker_tk, Future(ticker_tk, 'SMART', 'USD')]
+    elif ticker_at == 'FX':
+        symIB = [ticker_tk, Forex(ticker_tk,'IDEALPRO')]
 
     return symIB
 
@@ -35,7 +51,36 @@ def fnCreateIBSymbol(ticker_tk=None, ticker_at=None):
 # --------------------------------------------------------------------------------------------------
 # read positon / direction from ML model
 
-# def fn
+def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
+
+    if not ticker_tk:
+        ticker_tk = 'SPY'
+    else:
+        ticker_tk = ticker_tk
+    if not trdDate:
+        trdDate = dt.today().strftime('%Y-%m-%d')
+    else:
+        trdDate = trdDate
+
+    q = """ 
+            SELECT * FROM smadb.tbllivepositionsignal
+            WHERE ticker_tk='%s'
+            AND date = '%s'
+            ;
+        """ % (ticker_tk, trdDate)
+
+    conn = fnOdbcConnect('smadb')
+
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+
+    logging.info('Live Position Signal loaded: \n{}'.format(df))
+
+    # get position
+    pos = df['position'].values[0]
+
+    return pos
+
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
@@ -43,17 +88,48 @@ def fnCreateIBSymbol(ticker_tk=None, ticker_at=None):
 
 if __name__ == "__main__":
 
-    TWS_HOST = os.environ.get('TWS_HOST', '127.0.0.1')
-    TWS_PORT = os.environ.get('TWS_PORT', 7497)
+    setPandas()
+    setLogging(LOGGING_DIRECTORY = os.path.join('..\\..\\logging\\', dt.today().strftime('%Y-%m-%d')),
+               LOG_FILE_NAME = os.path.basename(__file__),
+               level = LOG_LEVEL)
 
-    print('Connecting on host:', TWS_HOST, 'port:', TWS_PORT)
+    logging.info('Running script {}'.format(os.path.basename(__file__)))
+    logging.info('Process ID: {}'.format(os.getpid()))
+    curDate = dt.today().strftime('%Y-%m-%d')
 
-    # init model
-    model = HftModel1(
-            host = TWS_HOST,
-            port = TWS_PORT,
-            client_id = 1,
-    )
-    tickerIB = fnCreateIBSymbol(ticker_tk = 'SPY', ticker_at = 'EQT')
 
-    model.run(to_trade = tickerIB, trade_qty = 100)
+    try:
+
+        position = fnGetLivePositionSignal(ticker_tk = ticker, trdDate = curDate)
+
+        TWS_HOST = os.environ.get('TWS_HOST', '127.0.0.1')
+        TWS_PORT = os.environ.get('TWS_PORT', 7497)
+
+        logging.info('Connecting on host: {} port: {}'.format(TWS_HOST, TWS_PORT))
+
+        # init model
+        model = HftModel1(
+                host = TWS_HOST,
+                port = TWS_PORT,
+                client_id = 1,
+        )
+        # todo:
+        # create IB symbol
+        # tickerIB = fnCreateIBSymbol(ticker_tk = ticker, ticker_at = ticker_at)
+
+        tickerIB = fnCreateIBSymbol(ticker_tk = 'EURUSD', ticker_at = 'FX')
+        # run model
+        model.run(ticker_tk = tickerIB, position = position)
+
+
+        # -------------------------------------------------------------------------------------------------
+
+        logging.info('----- END PROGRAM -----')
+
+    except Exception as e:
+        logging.error(str(e), exc_info=True)
+
+    # CLOSE LOGGING
+    for handler in logging.root.handlers:
+        handler.close()
+    logging.shutdown()
