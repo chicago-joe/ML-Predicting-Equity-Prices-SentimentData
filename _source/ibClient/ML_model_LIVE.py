@@ -1,9 +1,9 @@
 # --------------------------------------------------------------------------------------------------
-# backtest_v3,py
+# ML_model_LIVE.py
 #
 #
 # --------------------------------------------------------------------------------------------------
-# created by Joseph Loss on 6/22/2020
+# created by Joseph Loss on 11/01/2020
 
 ticker = 'SPY'
 max_n = 2500
@@ -133,7 +133,6 @@ def fnComputeVIXTerm(startDate=None, endDate=None):
 
 # --------------------------------------------------------------------------------------------------
 # compute VIX Predictor
-
 # defined as: VixAlert = 0 or 1. if the vix is more than 18% higher than two days before the first of the current month and also greater than 21 than set VixAlert=1 else it's always 0.
 
 def fnVIXPredictor(df):
@@ -211,32 +210,7 @@ def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['{}-rtn-1D'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
     df['rtnStdDev'].dropna(inplace=True)
-    # df['rtnStdDev'] = df['rtnStdDev'][1:]
     df.dropna(inplace=True)
-
-    # --------------------------------------------------------------------------------------------------
-    # classify returns TODAY based on std deviation * bin
-
-    # df.loc[df['{}-rtn-1D'.format(retType)] > (df['rtnStdDev'] * 1.0),
-    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 2
-
-    # df.loc[(df['{}-rtn-1D'.format(retType)] > (df['rtnStdDev'] * 0.05)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
-    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 1
-    # df.loc[(df['{}-rtn-1D'.format(retType)] < (df['rtnStdDev'] * -0.05)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
-    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = -1
-
-    # df.loc[(df['{}-rtn-1D'.format(retType)] < (df['rtnStdDev'] * -1.0)) & (df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna()),
-    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = -2
-
-    # df.loc[df['{}-rtnYesterdayToTodayClassified'.format(retType)].isna(),
-    # '{}-rtnYesterdayToTodayClassified'.format(retType)] = 0
-
-    ## df['log-rtn-1DClassified'].value_counts()
-    # -1.00000    1112
-    # 1.00000      944
-    # 2.00000      443
-    # 0.00000      159
-
     return df
 
 
@@ -342,39 +316,19 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
         """ % (ticker, startDate)
 
     conn = fnOdbcConnect('smadb')
-    # conn = mysql.connector.connect(**config)
 
     df_temp = pd.read_sql_query(q, conn)
-
     conn.disconnect()
     conn.close()
 
     df_temp.sort_values('timestampET', inplace=True)
-    # # df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
-    #
-    # df_datetime = pd.DataFrame(columns = ['Date', 'Time'])
-    # df_datetime['Time'] = df_temp['date'].apply(lambda x: x.strftime('%H:%M:%S'))
-    # df_datetime['Date'] = df_temp['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
-    # # df_datetime.columns = ['Date', 'Time']
-    #
-    # # merge datetime and aggregate dataframe
-    # dfAgg = pd.merge(df_temp, df_datetime, left_index = True, right_index = True)
-
     dfAgg = df_temp.copy()
 
     # filtering based on trading hours and excluding weekends
-    # dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
-    # dfAgg['center-date'] = pd.to_datetime(dfAgg['center-date'])
-
     dfAgg = dfAgg.loc[(dfAgg['timestampET'].dt.dayofweek != 5) & (dfAgg['timestampET'].dt.dayofweek != 6)]
-
-    dfAgg['Time']=dfAgg['timestampET'].dt.strftime('%H:%M:%S')
-    dfAgg['Date']=dfAgg['timestampET'].dt.strftime('%Y-%m-%d')
-
-    # dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]      # 69.75% cumulative ret
-    dfAgg = dfAgg[(dfAgg['Time']>= '04:30:00') & (dfAgg['Time'] <= '12:00:00')]
-    # dfAgg = dfAgg[(dfAgg['Time']>= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
-
+    dfAgg['Time'] = dfAgg['timestampET'].dt.strftime('%H:%M:%S')
+    dfAgg['Date'] = dfAgg['timestampET'].dt.strftime('%Y-%m-%d')
+    dfAgg = dfAgg[(dfAgg['Time'] >= '04:30:00') & (dfAgg['Time'] <= '16:00:00')]  # 69.75% cumulative ret
 
     # exclude weekends and drop empty columns
     dfAgg = dfAgg.dropna(axis = 'columns')
@@ -416,68 +370,11 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
 
 
 # --------------------------------------------------------------------------------------------------
-# read in S-Factor Feed Data
-
-def fnLoadSFactorFeed(ticker='SPY'):
-
-    path = '..\\_data\\sFactorFeed\\'
-
-    colNames = ['ticker', 'date', 'raw-s', 'raw-s-mean', 'raw-volatility',
-                'raw-score', 's', 's-mean', 's-volatility', 's-score',
-                's-volume', 'sv-mean', 'sv-volatility', 'sv-score',
-                's-dispersion', 's-buzz', 's-delta',
-                'center-date', 'center-time', 'center-time-zone']
-
-    df2015 = pd.read_csv(path + '2015\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2016 = pd.read_csv(path + '2016\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2017 = pd.read_csv(path + '2017\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2018 = pd.read_csv(path + '2018\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2019 = pd.read_csv(path + '2019\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-
-    # aggregating data
-    df_temp = df2015.append(df2016, ignore_index = True)
-    df_temp = df_temp.append(df2017, ignore_index = True)
-    df_temp = df_temp.append(df2018, ignore_index = True)
-    df_temp = df_temp.append(df2019, ignore_index = True)
-
-    df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
-    df_datetime.columns = ['Date', 'Time']
-
-    # merge datetime and aggregate dataframe
-    dfAgg = pd.merge(df_temp, df_datetime, left_index = True, right_index = True)
-
-    # filtering based on trading hours and excluding weekends
-    dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
-
-    dfAgg = dfAgg.loc[(dfAgg['Date'].dt.dayofweek != 5) & (dfAgg['Date'].dt.dayofweek != 6)]
-    dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
-
-    # exclude weekends and drop empty columns
-    dfAgg = dfAgg.dropna(axis = 'columns')
-    dfAgg = dfAgg.drop(columns = ['ticker', 'date',
-                                  'raw-s', 'raw-s-mean', 'raw-volatility', 'raw-score',
-                                  'center-date', 'center-time', 'center-time-zone'])
-
-    # aggregate by date
-    dfT = dfAgg.groupby('Date').last().reset_index()
-    dfT.index = dfT['Date']
-
-    dfT = dfT.drop(columns = ['Date', 'Time'])
-    dfT.columns = ticker + ':' + dfT.columns
-
-    return dfT
-
-
-# --------------------------------------------------------------------------------------------------
 # combine and aggregate spy / futures activity feed ata
 
 def fnAggActivityFeed(df1, df2, dfStk, ticker=None):
 
-    # df3.index = pd.to_datetime(df3.index).strftime('%Y-%m-%d')
-    # df4.index = pd.to_datetime(df4.index).strftime('%Y-%m-%d')
-
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
-    # dfB = pd.concat([df3, df4], axis=1, sort=False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
     df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnCalculateLaggedRets(dfStk)
@@ -486,14 +383,11 @@ def fnAggActivityFeed(df1, df2, dfStk, ticker=None):
     rtnTodayToTomorrowClassified.index.name = 'Date'
 
     dfA.dropna(inplace = True)
-    # dfB.dropna(inplace=True)
     rtnTodayToTomorrow.dropna(inplace = True)
 
     dfAgg = pd.merge(dfA, df, how = 'inner', left_index = True, right_index = True)
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrow, how = 'inner', left_index = True, right_index = True)
     dfAgg = pd.merge(dfAgg, rtnTodayToTomorrowClassified, how = 'inner', left_index = True, right_index = True)
-
-    # dfAgg = pd.merge(dfAgg, dfB, how='inner',left_index=True,right_index=True)
 
     # pull in VIX data
     dfVIX = fnGetCBOEData(ticker='VIX', startDate = dfAgg.index[0], endDate = dfAgg.index[-1])
@@ -758,72 +652,6 @@ def fnComputePortfolioRtn(dfStk= None, pos = None):
 
 
 # --------------------------------------------------------------------------------------------------
-# plot feature importances and pred vs residual values
-
-def fnPlotFeatureImportance(dfFeat):
-
-    dfFI = dfFeat.mean(axis=1)
-    names = dfFI.index.tolist()
-    featNames = np.array(names)
-
-    featureImportance = dfFI.values
-    featureImportance = featureImportance / featureImportance.max()    # scale by max importance
-    sorted_idx = np.argsort(featureImportance)
-    barPos = np.arange(sorted_idx.shape[0]) + 0.5
-    plot.barh(barPos, featureImportance[sorted_idx], align = 'center')      # chart formatting
-    plot.yticks(barPos, featNames[sorted_idx])
-    plot.xlabel('Variable Importance')
-    plot.show()
-
-    return
-
-
-# --------------------------------------------------------------------------------------------------
-# plot predicted vs residual
-
-def plotResiduals(y_train, y_train_pred, y_test, y_test_pred):
-
-    plt.scatter(y_train_pred.reshape(-1,1),
-                (y_train_pred.reshape(-1,1) - y_train.reshape(-1,1)),
-                c='steelblue',
-                edgecolors = 'white',
-                marker='o',
-                s=35,
-                alpha=0.9,
-                label='Training data')
-
-    plt.scatter(y_test_pred.reshape(-1,1),
-                (y_test_pred.reshape(-1,1) - y_test.reshape(-1,1)),
-                c='limegreen',
-                edgecolors = 'white',
-                marker='s',
-                s=35,
-                alpha=0.9,
-                label='Test data')
-
-    plt.xlabel('Predicted values')
-    plt.ylabel('Residuals')
-    plt.legend(loc='upper left')
-    plt.hlines(y=0, xmin=-0.075, xmax=0.075, lw=2, color='black')
-    plt.xlim([-0.075,0.075])
-
-    plt.show()
-    return
-
-
-# --------------------------------------------------------------------------------------------------
-# plot distributions and quantile plots
-
-def plotDistributions(df):
-    for i in dfAgg.columns:
-        sns.distplot(dfAgg[i])
-        plt.show()
-        fig = qp(dfAgg[i], line='s')
-        plt.show()
-    return
-
-
-# --------------------------------------------------------------------------------------------------
 # load security prices from smadb
 
 def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
@@ -918,16 +746,8 @@ if __name__ == '__main__':
         dpred = dpred.iloc[:-1]
 
 
-        # --------------------------------------------------------------------------------------------------
         # compute portfolio returns
-
         dfP = fnComputePortfolioRtn(dfStk=dfStk, pos=dpred)
-
-        # logging.info('Mean Feature Importance:\n', dfFeat.mean(axis = 1).sort_values(ascending = False))
-
-        # plot feature importance
-        # fnPlotFeatureImportance(dfFeat = dfFeat)
-
 
         # --------------------------------------------------------------------------------------------------
         # upload results and parameters to database
