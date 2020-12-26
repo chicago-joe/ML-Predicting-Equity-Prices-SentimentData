@@ -48,6 +48,7 @@ import seaborn as sns
 from statsmodels.graphics.gofplots import qqplot as qp
 
 # custom imports
+sys.path.append('..\\..\\_source')
 from fnCommon import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
 
 LOG_FILE_NAME = os.path.basename(__file__)
@@ -62,7 +63,7 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 
     # download latest data from CBOE
     if ticker == 'VIX':
-        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}current.csv'.format(ticker.lower())
+        url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/{}current.csv'.format(ticker.lower())
         df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
 
         df.rename(columns={'VIX Close':'VIX_Close'}, inplace=True)
@@ -75,7 +76,7 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
         df = df.merge(dfV,left_index=True,right_index=True)
 
     else:
-        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}dailyprices.csv'.format(ticker.lower())
+        url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/{}dailyprices.csv'.format(ticker.lower())
         df = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)
 
     if startDate:
@@ -92,19 +93,19 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 def fnComputeVIXTerm(startDate=None, endDate=None):
 
     # download latest data from CBOE
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
     df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
 
     df.rename(columns={'VIX Close':'VIX'}, inplace=True)
     df = df[['VIX']]
 
     # get 9-day vix
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix9ddailyprices.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vix9ddailyprices.csv'
     df9D = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)['Close']
     df9D.index = pd.DatetimeIndex(df9D.index.str.replace('/', '-').str.replace('*', ''))
 
     # get 3 month VIX
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix3mdailyprices.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vix3mdailyprices.csv'
     df3M = pd.read_csv(url, skiprows=2, index_col=0, parse_dates = True)['CLOSE']
     df3M.index = pd.DatetimeIndex(df3M.index)
 
@@ -411,59 +412,6 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
     dfT['raw_s_MACD_ewma7-ewma14'] = dfT["mean_raw_s"].ewm(span = 7).mean() - dfT["mean_raw_s"].ewm(span = 14).mean()
 
     dfT = dfT.drop(columns = ['ticker_at', 'Date', 'raw_s', 's-volume', 's-dispersion', 'Time', 'volume_base_s'])
-    dfT.columns = ticker + ':' + dfT.columns
-
-    return dfT
-
-
-# --------------------------------------------------------------------------------------------------
-# read in S-Factor Feed Data
-
-def fnLoadSFactorFeed(ticker='SPY'):
-
-    path = '..\\_data\\sFactorFeed\\'
-
-    colNames = ['ticker', 'date', 'raw-s', 'raw-s-mean', 'raw-volatility',
-                'raw-score', 's', 's-mean', 's-volatility', 's-score',
-                's-volume', 'sv-mean', 'sv-volatility', 'sv-score',
-                's-dispersion', 's-buzz', 's-delta',
-                'center-date', 'center-time', 'center-time-zone']
-
-    df2015 = pd.read_csv(path + '2015\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2016 = pd.read_csv(path + '2016\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2017 = pd.read_csv(path + '2017\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2018 = pd.read_csv(path + '2018\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-    df2019 = pd.read_csv(path + '2019\\{}.txt'.format(ticker), skiprows = 4, sep = '\t')
-
-    # aggregating data
-    df_temp = df2015.append(df2016, ignore_index = True)
-    df_temp = df_temp.append(df2017, ignore_index = True)
-    df_temp = df_temp.append(df2018, ignore_index = True)
-    df_temp = df_temp.append(df2019, ignore_index = True)
-
-    df_datetime = df_temp['date'].str.split(' ', n = 1, expand = True)
-    df_datetime.columns = ['Date', 'Time']
-
-    # merge datetime and aggregate dataframe
-    dfAgg = pd.merge(df_temp, df_datetime, left_index = True, right_index = True)
-
-    # filtering based on trading hours and excluding weekends
-    dfAgg['Date'] = pd.to_datetime(dfAgg['Date'])
-
-    dfAgg = dfAgg.loc[(dfAgg['Date'].dt.dayofweek != 5) & (dfAgg['Date'].dt.dayofweek != 6)]
-    dfAgg = dfAgg[(dfAgg['Time'] >= '09:30:00') & (dfAgg['Time'] <= '16:00:00')]
-
-    # exclude weekends and drop empty columns
-    dfAgg = dfAgg.dropna(axis = 'columns')
-    dfAgg = dfAgg.drop(columns = ['ticker', 'date',
-                                  'raw-s', 'raw-s-mean', 'raw-volatility', 'raw-score',
-                                  'center-date', 'center-time', 'center-time-zone'])
-
-    # aggregate by date
-    dfT = dfAgg.groupby('Date').last().reset_index()
-    dfT.index = dfT['Date']
-
-    dfT = dfT.drop(columns = ['Date', 'Time'])
     dfT.columns = ticker + ':' + dfT.columns
 
     return dfT
@@ -927,7 +875,7 @@ if __name__ == '__main__':
         logging.info('Mean Feature Importance:\n{}'.format(dfFeat.mean(axis = 1).sort_values(ascending = False)))
 
         # plot feature importance
-        fnPlotFeatureImportance(dfFeat = dfFeat)
+        # fnPlotFeatureImportance(dfFeat = dfFeat)
 
 
         # --------------------------------------------------------------------------------------------------
