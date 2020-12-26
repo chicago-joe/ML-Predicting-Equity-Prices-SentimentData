@@ -127,7 +127,6 @@ class BaseModel(object):
             fn_on_filled = self.fun_on_filled
 
         qty = float(qty)
-        # qty = qty.values[0]
 
         order = MarketOrder(
                 order_util.get_order_action(qty),
@@ -148,8 +147,6 @@ class BaseModel(object):
         return data.midpoint()
 
     def fun_on_filled(self, trade):
-        # while not trade.isDone():
-        #     self.ib.waitOnUpdate()
         logging.debug('Function Called on being filled')
         logging.info('Order filled: {}'.format(trade))
 
@@ -197,7 +194,6 @@ class BaseModel(object):
 class HftModel1(BaseModel):
 
     def __init__(self, *args, **kwargs):
-        # super().__init__(*args, **kwargs)
         super(HftModel1, self).__init__(*args, **kwargs)
 
         self.df_hist = None  # stores mid prices in a pandas DataFrame
@@ -233,9 +229,6 @@ class HftModel1(BaseModel):
             self.perform_trade_logic()
         # while self.is_orders_pending:
         #     self.ib.sleep(1)
-
-        # if not self.is_position_flat:
-        # self.print_account()
 
     def print_account(self):
         pd.set_option('display.max_rows', 120)
@@ -275,8 +268,6 @@ class HftModel1(BaseModel):
     def onOrderStatus(self, trade):
         orderStatus = trade.orderStatus.status
         return
-
-    # return
 
     def onExecDetails(self, trade, fill):
         execStatus = fill.execution
@@ -498,26 +489,12 @@ class HftModel1(BaseModel):
             else:
                 trdShares = (cash / last) * abs(pos) * 1
 
-
-
         trade = self.place_market_order(cnOrder, trdShares, self.on_filled)
         logging.info('Order placed: {}'.format(trade))
 
         self.is_orders_pending = True
         self.pending_order_ids.add(trade.order.orderId)
         logging.info('Order IDs pending execution: {}'.format(self.pending_order_ids))
-
-        # todo:
-        # while not tradeClose.isDone():
-        # 	self.ib.sleep()
-
-        #
-        # logging.info('Order placed: {}'.format(tradeOpen))
-        #
-        # self.is_orders_pending = True
-        # self.pending_order_ids.add(tradeOpen.order.orderId)
-        # logging.info('Order IDs pending execution: {}'.format(self.pending_order_ids))
-
 
         return
 

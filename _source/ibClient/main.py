@@ -1,10 +1,6 @@
 # main.py
 #
-#
 # Predicting SPY prices using SMA data for IBroker's Python API.
-#
-# Original Templates, Classes, and Parameters located at:
-# https://github.com/jamesmawm/High-Frequency-Trading-Model-with-IB
 #
 # created by joe.loss, November 2020
 # --------------------------------------------------------------------------------------------------
