@@ -20,7 +20,6 @@ LOG_LEVEL = 'INFO'
 # parse CBOE futures term
 # http://www.cboe.com/delayedquote/futures-quotes
 # VIN, OVX, SKEW, USO
-# 3. SMA cboe index http://www.cboe.com/index/dashboard/smlcw#smlcw-overview
 
 # --------------------------------------------------------------------------------------------------
 # Module imports
@@ -62,7 +61,7 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 
     # download latest data from CBOE
     if ticker == 'VIX':
-        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}current.csv'.format(ticker.lower())
+        url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/{}current.csv'.format(ticker.lower())
         df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
 
         df.rename(columns={'VIX Close':'VIX_Close'}, inplace=True)
@@ -75,7 +74,7 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
         df = df.merge(dfV,left_index=True,right_index=True)
 
     else:
-        url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/{}dailyprices.csv'.format(ticker.lower())
+        url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/{}dailyprices.csv'.format(ticker.lower())
         df = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)
 
     if startDate:
@@ -92,19 +91,19 @@ def fnGetCBOEData(ticker='VIX', startDate=None, endDate=None):
 def fnComputeVIXTerm(startDate=None, endDate=None):
 
     # download latest data from CBOE
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vixcurrent.csv'
     df = pd.read_csv(url, skiprows=1, index_col=0, parse_dates = True)
 
     df.rename(columns={'VIX Close':'VIX'}, inplace=True)
     df = df[['VIX']]
 
     # get 9-day vix
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix9ddailyprices.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vix9ddailyprices.csv'
     df9D = pd.read_csv(url, skiprows=3, index_col=0, parse_dates = True)['Close']
     df9D.index = pd.DatetimeIndex(df9D.index.str.replace('/', '-').str.replace('*', ''))
 
     # get 3 month VIX
-    url = 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vix3mdailyprices.csv'
+    url = 'https://ww2.cboe.com/publish/scheduledtask/mktdata/datahouse/vix3mdailyprices.csv'
     df3M = pd.read_csv(url, skiprows=2, index_col=0, parse_dates = True)['CLOSE']
     df3M.index = pd.DatetimeIndex(df3M.index)
 
@@ -203,13 +202,11 @@ def fnComputeReturns(df, colPrc='adjClose', tPeriod = None, retType = 'simple'):
 # --------------------------------------------------------------------------------------------------
 # classify simple or log returns
 
-# todo:
-# Edit classification bins
-
 def fnClassifyReturns(df, retType = 'simple'):
 
     df['rtnStdDev'] = df['{}-rtn-1D'.format(retType)].iloc[::1].rolling(30).std().iloc[::1]
     df['rtnStdDev'].dropna(inplace=True)
+    # df['rtnStdDev'] = df['rtnStdDev'][1:]
     df.dropna(inplace=True)
     return df
 
@@ -217,7 +214,7 @@ def fnClassifyReturns(df, retType = 'simple'):
 # --------------------------------------------------------------------------------------------------
 # calculate returns today / tomorrow and bin them
 
-def fnCalculateLaggedRets(df):
+def fnCalculateLaggedRets(df, dfA):
 
     # compute returns
     dfR = fnComputeReturns(df, 'adjClose', tPeriod = 1, retType = 'log')
@@ -265,11 +262,8 @@ def fnCalculateLaggedRets(df):
     rtnStdDev = dfT['log-rtn-1D'].iloc[::1].rolling(30).std().iloc[::1]
     rtnStdDev.dropna(inplace=True)
 
-
-    # todo:
-    #  adjust these automatically
-    dfT = dfT.loc[(dfT.index >= '2015-07-23') & (dfT.index <= '2019-10-31')]
-    rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= '2015-07-23') & (rtnStdDev.index <= '2019-10-31')]
+    dfT = dfT.loc[(dfT.index >= dfA.iloc[0].name) & (dfT.index <= dfA.iloc[-1].name)]
+    rtnStdDev = rtnStdDev.loc[(rtnStdDev.index >= dfA.iloc[0].name) & (rtnStdDev.index <= dfA.iloc[-1].name)]
 
     ## using regular returns to calculate target variable
     rtnTodayToTomorrow = dfT['adjClose'].pct_change().shift(-1)
@@ -300,7 +294,6 @@ def fnCalculateLaggedRets(df):
 # read in activity feed data
 
 def fnLoadActivityFeed(ticker='SPY', startDate=None):
-
 
     if not startDate:
         startDate = '2015-01-02'
@@ -377,7 +370,7 @@ def fnAggActivityFeed(df1, df2, dfStk, ticker=None):
     dfA = pd.concat([df1, df2], axis = 1, sort = False)
 
     # pull Spy returns, classified tommorrow returns, classified today returns
-    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnCalculateLaggedRets(dfStk)
+    df, rtnTodayToTomorrow, rtnTodayToTomorrowClassified = fnCalculateLaggedRets(dfStk, dfA)
 
     rtnTodayToTomorrow.index.name = 'Date'
     rtnTodayToTomorrowClassified.index.name = 'Date'
@@ -433,225 +426,6 @@ def fnAggActivityFeed(df1, df2, dfStk, ticker=None):
 
 
 # --------------------------------------------------------------------------------------------------
-# winsorize data method
-
-def winsorizeData(s):
-    return winsorize(s, limits = [0.005, 0.005])
-
-
-# --------------------------------------------------------------------------------------------------
-# adf testing
-
-def adf_test(timeSeries):
-    dfADF = adfuller(timeSeries, autolag = 'AIC')
-    output = pd.Series(dfADF[0:4], index = ['Test Statistic', 'p-value', '#Lags Used', 'Number of Observations Used'])
-
-    for key, value in dfADF[4].items():
-        output['Critical Value (%s)' % key] = value
-    logging.debug('ADF Testing: %s \n%s\n' % (timeSeries.name, output))
-
-    return output
-
-# --------------------------------------------------------------------------------------------------
-# test stationarity
-
-def stationarity(result):
-    plist = { }
-    for col in result:
-        if adf_test(result[col])['p-value'] < 0.05:
-            st = True
-        else:
-            st = False
-        plist[col] = st
-
-    return plist
-
-
-# --------------------------------------------------------------------------------------------------
-# predict
-
-def predict(df, nTrain, nTest, dfS):
-
-    X_train = df[0:nTrain]
-    X_test = df[nTrain:nTrain + nTest]
-
-    y_train = X_train['rtnTodayToTomorrow']
-    y_test = X_test['rtnTodayToTomorrow']
-
-    # drop y variables from features
-    X_train.drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1,)
-    X_test.drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1)
-
-
-    # --------------------------------------------------------------------------------------------------
-    # winsorize / feature scaling
-
-    X_train = X_train.apply(winsorizeData, axis = 0)
-    maxTrain = X_train.max()
-    minTrain = X_train.min()
-
-    conditions = [(X_test.values < minTrain.values), (X_test.values > maxTrain.values)]
-    choices = [minTrain, maxTrain]
-    tmp = np.select(conditions, choices, default = X_test)
-
-    X_test = pd.DataFrame._from_arrays(tmp.transpose(), columns = X_test.columns, index = X_test.index)
-
-
-    # --------------------------------------------------------------------------------------------------
-    # test for stationarity
-
-    stationarityResults = (stationarity(X_train))
-    stationarityResults = pd.DataFrame(stationarityResults, index = [0])
-    stationaryFactors = []
-
-    for i in stationarityResults.columns:
-        if stationarityResults[i][0] == 1:
-            stationaryFactors.append(i)
-
-
-    X_test = X_test[stationaryFactors].drop(['rtnTodayToTomorrow',
-                          'rtnTodayToTomorrowClassified', ]
-                         ,
-                         axis = 1)
-    X_train = X_train[stationaryFactors].drop(['rtnTodayToTomorrow',
-                            'rtnTodayToTomorrowClassified', ]
-                           ,
-                           axis = 1)
-
-
-# --------------------------------------------------------------------------------------------------
-    # Preprocess / Standardize data
-
-    sc_X = StandardScaler()
-    X_train_std = sc_X.fit_transform(X_train)
-    X_test_std = sc_X.fit_transform(X_test)
-
-    y_train = np.array(y_train).reshape(-1, 1)
-    y_test = np.array(y_test).reshape(-1, 1)
-
-
-    # --------------------------------------------------------------------------------------------------
-    # init random forest
-
-    RFmodel = RandomForestRegressor(criterion = 'mse',
-                                    max_features = "auto",
-                                    n_estimators = max_n,
-                                    # max_leaf_nodes = 2,
-                                    # oob_score = True,
-                                    # max_depth=10,
-                                    min_samples_leaf = 100,
-                                    random_state = seed,
-                                    n_jobs = -1)
-
-    RFmodel.fit(X_train_std, y_train)
-
-    temp = pd.Series(RFmodel.feature_importances_, index = X_test.columns)
-    dfFeat[df.index[-1]] = temp
-
-    # predict in-sample and out-of-sample
-    y_train_pred = RFmodel.predict(X_train_std)
-    y_test_pred = RFmodel.predict(X_test_std)
-
-
-    # --------------------------------------------------------------------------------------------------
-    # statistics
-
-    print('\n\n----------------------------------------\n')
-    logging.info("DATE: %s " % (pd.to_datetime(df.index[len(df) - 1]).date()))
-
-    logging.info('MSE - Train: %.6f, Test: %.6f' % (
-            mean_squared_error(y_train, y_train_pred),
-            mean_squared_error(y_test, y_test_pred)))
-
-    logging.info('R^2 - Train: %.4f, Test: %.4f' % (
-            r2_score(y_train, y_train_pred),
-            r2_score(y_test, y_test_pred)))
-
-    logging.info('Explained Variance - Train: %.4f, Test: %.4f' % (
-            explained_variance_score(y_train, y_train_pred),
-            explained_variance_score(y_test, y_test_pred)))
-
-    predictionsY = y_test_pred
-
-    ## quantile is super common number so subtract .000001 or have quantile >= to the signal
-    signal_Q1 = np.quantile(predictionsY, 0.25) - 0.000001
-    dfS.at[df.index[-1], 'signal_Q1'] = signal_Q1
-
-
-    last_signal = predictionsY[-1]
-    dfS.at[df.index[-1], 'last_signal'] = last_signal
-    dfS.at[df.index[-1], 'signal_rolling_Q1'] = (dfS['last_signal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
-
-    if dfS.at[df.index[-1], 'signal_rolling_Q1'] == 9999:
-        dfS.at[df.index[-1], 'position'] = 0
-
-    else:
-        if (last_signal > 0.0001) & (last_signal > signal_Q1) & (last_signal < 0.001):
-            dfS.at[df.index[-1], 'position'] = 1.0
-
-        elif 0.001 > last_signal > 0.0001:
-            dfS.at[df.index[-1], 'position'] = 0.75
-
-        elif (last_signal > 0.001) & (dfS.at[df.index[-1], 'signal_rolling_Q1'] < last_signal) & (dfS.at[df.index[-1], 'signal_Q1'] < dfS.at[df.index[-1], 'signal_rolling_Q1']):
-            dfS.at[df.index[-1], 'position'] = -1
-
-        # elif (last_signal < 0.0009 ) & (dfS.at[df.index[-1], 'signal_rolling_Q1'] > dfS.at[df.index[-1], 'signal_Q1']*2):
-        #     dfS.at[df.index[-1], 'position'] = -1
-
-        elif last_signal > dfS.at[df.index[-1],'signal_rolling_Q1'] + dfS.at[df.index[-1], 'signal_Q1']:
-            dfS.at[df.index[-1], 'position'] = 1
-
-        else:
-            dfS.at[df.index[-1], 'position'] = 0
-
-
-    # print(' ')
-    logging.info('Last signal:\t %.6f' % dfS.at[df.index[-1], 'last_signal'].astype(float))
-    logging.info('Q1 signal:\t\t%.6f' % dfS.at[df.index[-1], 'signal_Q1'].astype(float))
-    logging.info('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'signal_rolling_Q1'].astype(float))
-    logging.info('Current Position:\t %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
-
-    time.sleep(wait_time)
-    featureImportances = pd.DataFrame(dfFeat)
-
-    return [dfS, featureImportances]
-
-
-# --------------------------------------------------------------------------------------------------
-# compute portfolio returns with position sizing
-
-def fnComputePortfolioRtn(dfStk= None, pos = None):
-    dfP = pos.copy()
-
-    # set to time-aware index
-    dfP.index = pd.DatetimeIndex(dfP.index.get_level_values(0))
-    dfP.index = pd.DatetimeIndex(dfP.index)
-
-    dfU = dfStk.copy()
-    dfU['return_T'] = dfU['adjClose'].pct_change().shift(-1)
-    dfU.index = pd.DatetimeIndex(dfU.index)
-    dfP = dfP.merge(dfU[['adjClose', 'return_T']], how = 'left', left_index = True, right_index = True)
-
-    # calculate cumulative asset return
-    dfP['creturn_T'] = ((1 + dfP['return_T']).cumprod() - 1).fillna(0)
-
-    # calculate cumulative portfolio return
-    dfP['return_P'] = dfP['position'] * dfP['return_T']
-    dfP['creturn_P'] = (1 + dfP['return_P']).cumprod() - 1
-
-    print('\n\n----------------------------------------')
-    print('----------------------------------------')
-    logging.info('Starting Portfolio:\n%s' % dfP.head(5))
-    print('\n\n----------------------------------------')
-    logging.info('Ending Portfolio:\n%s' % dfP.tail(5))
-    print('\n----------------------------------------')
-
-    # dfP.to_csv('backtest_results.csv')
-
-    return dfP
-
-
-# --------------------------------------------------------------------------------------------------
 # load security prices from smadb
 
 def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
@@ -670,7 +444,6 @@ def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
             ;   
         """ % (ticker, startDate, endDate)
 
-    # conn = mysql.connector.connect(**config)
     conn = fnOdbcConnect('smadb')
 
     dfStk = pd.read_sql_query(q, conn)
@@ -722,79 +495,23 @@ if __name__ == '__main__':
         # aggregate feature data
         dfAgg = fnAggActivityFeed(dfRaw, dfFutures, dfStk = dfStk, ticker=ticker)
 
+        dfLiveFeatures = dfAgg.copy()
+        dfLiveFeatures['ticker_at'] = 'EQT'
+        dfLiveFeatures['ticker_tk'] = ticker
+        dfLiveFeatures.reset_index(inplace=True)
+        dfLiveFeatures.rename(columns={'index':'date'},inplace=True)
 
-        # --------------------------------------------------------------------------------------------------
-        # calculate predictions based on rolling model (refit rolling 100 days)
-
-        # dfAgg = dfAgg.loc[dfAgg.index >= '2015-10-21']
-        testDays = len(dfAgg.loc[dfAgg.index >= testStart])
-        rollSet = dfAgg.loc[dfAgg.index < testStart]
-
-        # set nTest (rolling every x days)
-        nTrain = len(rollSet[:-nTestDays])
-        nTest = nTestDays + 1
-
-        dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index >= testStart].index],
-                           columns = ['signal_Q1', 'signal_rolling_Q1', 'last_signal', 'position'])
-
-        dpred = { }
-        dfFeat = { }
-
-        for i in range(0, len(dfAgg) - nTrain - nTest, 1):
-            dpred, dfFeat = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest, dfS)
-
-        dpred = dpred.iloc[:-1]
-
-
-        # compute portfolio returns
-        dfP = fnComputePortfolioRtn(dfStk=dfStk, pos=dpred)
-
-        # --------------------------------------------------------------------------------------------------
-        # upload results and parameters to database
-
-        runDate  = pd.to_datetime(datetime.now()).strftime('%Y-%m-%d')
-        ticker_at = 'EQT'
-        processID = os.getpid()
-
-        dfParams = pd.DataFrame(index=[0])
-
-        dfParams['date'] = runDate
-        dfParams['ticker_at'] = ticker_at
-        dfParams['ticker_tk'] = ticker
-        dfParams['process_id'] = processID
-        dfParams['max_nodes'] = max_n
-        dfParams['testStartDate'] = (pd.to_datetime(testStart) + timedelta(days=1)).strftime('%Y-%m-%d')
-        dfParams['testEndDate'] = pd.to_datetime(dfP.index[-1]).strftime('%Y-%m-%d')
-        dfParams['nTest'] = nTestDays
-        dfParams['nTrain'] = nTrain
-        dfParams['featuresStartDate'] = pd.to_datetime(dfAgg.index[0]).strftime('%Y-%m-%d')
-        dfParams['creturn_T'] = dfP.iloc[-1]['creturn_T']
-        dfParams['creturn_P'] = dfP.iloc[-1]['creturn_P']
-        dfParams['random_state'] = 0 if seed else 1
-
-        # push to perf summary tbl
+        # upload live features
         conn = fnOdbcConnect('smadb')
-        fnUploadSQL(dfParams, conn, 'smadb', 'backtest_performance_summary', 'REPLACE', None, True)
-
-
-        # --------------------------------------------------------------------------------------------------
-        # push to perf details tbl
-
-        dfP['date'] = runDate
-        dfP['simDate'] = pd.to_datetime(dfP.index).strftime('%Y-%m-%d')
-        dfP['ticker_at'] = ticker_at
-        dfP['ticker_tk'] = ticker
-        dfP['process_id'] = processID
-
-        fnUploadSQL(dfP, conn, 'smadb', 'backtest_performance_details', 'REPLACE', None, True)
+        fnUploadSQL(dfLiveFeatures, conn, 'smadb', 'tbllivepredictionfeatures', 'REPLACE', None, True)
+        conn.disconnect()
+        conn.close()
 
 
         # --------------------------------------------------------------------------------------------------
         # --------------------------------------------------------------------------------------------------
         # close logger / handlers
 
-        conn.disconnect()
-        conn.close()
         logging.info("========== END PROGRAM ==========")
 
     except Exception as e:

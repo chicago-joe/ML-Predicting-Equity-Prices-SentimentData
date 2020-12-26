@@ -1,0 +1,5 @@
+12/26/2020 02:58:06 PM - INFO - tbllivepredictionfeatures 14_58_06-23744.txt saved in: ..\..\output\upload
+12/26/2020 02:58:06 PM - INFO - Creating temp file: ..\..\output\upload\tbllivepredictionfeatures 14_58_06-23744.txt
+12/26/2020 02:58:06 PM - INFO - Number of rows affected: 1063
+12/26/2020 02:58:06 PM - INFO - Deleting temporary file: ..\..\output\upload\tbllivepredictionfeatures 14_58_06-23744.txt
+12/26/2020 02:58:06 PM - INFO - DONE
