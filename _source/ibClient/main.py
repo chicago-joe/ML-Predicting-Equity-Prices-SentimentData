@@ -21,10 +21,15 @@ import os, sys, logging
 import pandas as pd
 import numpy as np
 from datetime import datetime as dt
-from ibClient import HftModel1
 from ib_insync import Stock, ContFuture, Future, Forex
+
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
+
 from fnCommon import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
 
+from models.ibAlgo import HftModel1
 
 # --------------------------------------------------------------------------------------------------
 # create IB contract symbiology
@@ -55,31 +60,40 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 
     if not ticker_tk:
         ticker_tk = 'SPY'
-    else:
-        ticker_tk = ticker_tk
     if not trdDate:
         trdDate = dt.today().strftime('%Y-%m-%d')
-    else:
-        trdDate = trdDate
+
 
     q = """ 
             SELECT * FROM smadb.tbllivepositionsignal
             WHERE ticker_tk='%s'
-            AND date = '%s'
+            order by date desc
             ;
-        """ % (ticker_tk, trdDate)
+        """ % ticker_tk
 
     conn = fnOdbcConnect('smadb')
-
     df = pd.read_sql_query(q, conn)
     conn.close()
 
-    logging.info('Live Position Signal loaded: \n{}'.format(df))
-
     # get position
-    pos = df['position'].values[0]
+    if not df.empty:
+        df = df.loc[df.date<=pd.to_datetime(curDate)]
 
-    return pos
+        if len(df)>1:
+            logging.info('Live Position Signal loaded: \n{}'.format(df))
+            pos = df['position'].values[0]
+            posPr = df['position'].values[1]
+
+        else:
+            # todo: check valid date
+            logging.error('NO VALID DATE!')
+            raise Exception
+
+    else:
+        logging.error('NO POSITION LOADED')
+        raise Exception
+
+    return pos, posPr
 
 
 # --------------------------------------------------------------------------------------------------
@@ -100,10 +114,12 @@ if __name__ == "__main__":
 
     try:
 
-        position = fnGetLivePositionSignal(ticker_tk = ticker, trdDate = curDate)
+        pos, posPr = fnGetLivePositionSignal(ticker_tk = ticker, trdDate = curDate)
 
+        # TWS_PORT = sys.argv[1]
+        TWS_PORT = 7498
         TWS_HOST = os.environ.get('TWS_HOST', '127.0.0.1')
-        TWS_PORT = os.environ.get('TWS_PORT', 7497)
+        TWS_PORT = os.environ.get('TWS_PORT', TWS_PORT)
 
         logging.info('Connecting on host: {} port: {}'.format(TWS_HOST, TWS_PORT))
 
@@ -113,13 +129,12 @@ if __name__ == "__main__":
                 port = TWS_PORT,
                 client_id = 1,
         )
-        # todo:
-        # create IB symbol
-        # tickerIB = fnCreateIBSymbol(ticker_tk = ticker, ticker_at = ticker_at)
 
-        tickerIB = fnCreateIBSymbol(ticker_tk = 'EURUSD', ticker_at = 'FX')
+        tickerIB = fnCreateIBSymbol(ticker_tk = 'SPY', ticker_at = 'EQT')
+        # tickerIB = fnCreateIBSymbol(ticker_tk = 'EURUSD', ticker_at = 'FX')
+
         # run model
-        model.run(ticker_tk = tickerIB, position = position)
+        model.run(ticker_tk = tickerIB, position = pos, prevPosition = posPr)
 
 
         # -------------------------------------------------------------------------------------------------
