@@ -7,7 +7,6 @@
 
 ticker = 'SPY'
 max_n = 2500
-# testStart = '2017-12-31'
 testStart = '2017-12-10'
 nTestDays = 100             # prediction day = n + 1
 seed = 42
@@ -81,10 +80,26 @@ def stationarity(result):
     return plist
 
 
+def testDates(df, nTrain, nTest, dfS):
+
+    X_train = df[0:nTrain]
+    X_test = df[nTrain:nTrain + nTest]
+
+    y_train = X_train['rtnTodayToTomorrow']
+    y_test = X_test['rtnTodayToTomorrow']
+
+    # drop y variables from features
+    X_train.drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1,)
+    X_test.drop(['rtnTodayToTomorrow', 'rtnTodayToTomorrowClassified'], axis = 1)
+
+    print('X_train start: ',X_train.iloc[0].name,'\tX_test start: ',X_test.iloc[0].name)
+    print('X_train stop: ',X_train.iloc[-1].name,'\tX_test stop: ',X_test.iloc[-1].name)
+
+
 # --------------------------------------------------------------------------------------------------
 # predict
 
-def predict(df, nTrain, nTest, dfS):
+def predict(df, nTrain, nTest):
 
     X_train = df[0:nTrain]
     X_test = df[nTrain:nTrain + nTest]
@@ -158,9 +173,6 @@ def predict(df, nTrain, nTest, dfS):
 
     RFmodel.fit(X_train_std, y_train)
 
-    temp = pd.Series(RFmodel.feature_importances_, index = X_test.columns)
-    dfFeat[df.index[-1]] = temp
-
     # predict in-sample and out-of-sample
     y_train_pred = RFmodel.predict(X_train_std)
     y_test_pred = RFmodel.predict(X_test_std)
@@ -184,16 +196,47 @@ def predict(df, nTrain, nTest, dfS):
             explained_variance_score(y_train, y_train_pred),
             explained_variance_score(y_test, y_test_pred)))
 
+
+# -----------------------------------------------------------------------
+#
+
     predictionsY = y_test_pred
 
     ## quantile is super common number so subtract .000001 or have quantile >= to the signal
     signal_Q1 = np.quantile(predictionsY, 0.25) - 0.000001
-    dfS.at[df.index[-1], 'signal_Q1'] = signal_Q1
-
-
     last_signal = predictionsY[-1]
+
+    q = """
+            SELECT date, last_signal
+            FROM smadb.tbllivepositionsignal_v2
+        """
+
+    conn = fnOdbcConnect('smadb')
+
+    # df.index=df.index.strftime('%Y-%m-%d').str.replace('10-','12-')
+    dfQ = pd.read_sql_query(q, conn, parse_dates=True)
+
+    conn.disconnect()
+    conn.close()
+
+    dfQ['date'] = pd.to_datetime(dfQ['date'])
+    dfQ.set_index('date',inplace=True)
+
+
+    dfS = pd.DataFrame(index = [df.loc[df.index >= testStart].index],
+                       columns = ['signal_Q1', 'signal_rolling_Q1','position'])
+
+
+    dfS=dfS.merge(dfQ['last_signal'],how='left', on='date')
+
+
+    # dfQ.set_index('date', inplace = True)
+    # dfQ = dfQ[['last_signal','date']]
+
+    dfS.at[df.index[-1], 'signal_Q1'] = signal_Q1
     dfS.at[df.index[-1], 'last_signal'] = last_signal
-    dfS.at[df.index[-1], 'signal_rolling_Q1'] = (dfS['last_signal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
+    # dfS.at[df.index[-1], 'signal_rolling_Q1'] = (dfS['last_signal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
+    dfS['signal_rolling_Q1'] = (dfS['last_signal'] - 0.000001).rolling(window = 7).quantile(0.25).fillna(9999)
 
     if dfS.at[df.index[-1], 'signal_rolling_Q1'] == 9999:
         dfS.at[df.index[-1], 'position'] = 0
@@ -222,42 +265,24 @@ def predict(df, nTrain, nTest, dfS):
     logging.info('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'signal_rolling_Q1'].astype(float))
     logging.info('Current Position:\t %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
 
-    time.sleep(wait_time)
-    featureImportances = pd.DataFrame(dfFeat)
 
-    return [dfS, featureImportances]
+    dfS=dfS[-1:]
+    dfS['ticker_tk'] = ticker
+    dfS['ticker_at'] = 'EQT'
+    dfS.reset_index(inplace=True)
+    dfS.date = pd.to_datetime(dfS.date).dt.strftime('%Y-%m-%d')
 
 
-# --------------------------------------------------------------------------------------------------
-# compute portfolio returns with position sizing
+    conn = fnOdbcConnect('smadb')
 
-def fnComputePortfolioRtn(dfStk= None, pos = None):
-    dfP = pos.copy()
+    # df.index=df.index.strftime('%Y-%m-%d').str.replace('10-','12-')
+    fnUploadSQL(dfS, conn, 'smadb', 'tbllivepositionsignal_v2', 'REPLACE', None, True)
+    conn.disconnect()
+    conn.close()
 
-    # set to time-aware index
-    dfP.index = pd.DatetimeIndex(dfP.index.get_level_values(0))
-    dfP.index = pd.DatetimeIndex(dfP.index)
 
-    dfU = dfStk.copy()
-    dfU['return_T'] = dfU['adjClose'].pct_change().shift(-1)
-    dfU.index = pd.DatetimeIndex(dfU.index)
-    dfP = dfP.merge(dfU[['adjClose', 'return_T']], how = 'left', left_index = True, right_index = True)
 
-    # calculate cumulative asset return
-    dfP['creturn_T'] = ((1 + dfP['return_T']).cumprod() - 1).fillna(0)
-
-    # calculate cumulative portfolio return
-    dfP['return_P'] = dfP['position'] * dfP['return_T']
-    dfP['creturn_P'] = (1 + dfP['return_P']).cumprod() - 1
-
-    print('\n\n----------------------------------------')
-    print('----------------------------------------')
-    logging.info('Starting Portfolio:\n%s' % dfP.head(5))
-    print('\n\n----------------------------------------')
-    logging.info('Ending Portfolio:\n%s' % dfP.tail(5))
-    print('\n----------------------------------------')
-
-    return dfP
+    return dfS
 
 
 # --------------------------------------------------------------------------------------------------
@@ -277,45 +302,45 @@ if __name__ == '__main__':
     np.set_printoptions(formatter = {'float_kind':floatFormatter})
 
 
-    # --------------------------------------------------------------------------------------------------
-
     try:
 
         q = """
                 SELECT * 
                 FROM smadb.tbllivepredictionfeatures
+                WHERE ticker_tk = '%s'
                 
-            """
+            """ % ticker
 
         conn = fnOdbcConnect('smadb')
-        dfAgg = pd.read_sql_query(q, conn)
-
+        dfAgg = pd.read_sql_query(q, conn, parse_dates = True)
         conn.disconnect()
         conn.close()
+        dfAgg.set_index('date', inplace = True)
 
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 
-        # dfAgg = dfAgg.loc[dfAgg.index >= '2015-10-21']
+        testStart = pd.to_datetime(testStart)
         testDays = len(dfAgg.loc[dfAgg.index >= testStart])
         rollSet = dfAgg.loc[dfAgg.index < testStart]
 
         # set nTest (rolling every x days)
         nTrain = len(rollSet[:-nTestDays])
         nTest = nTestDays + 1
-
-        dfS = pd.DataFrame(index = [dfAgg.loc[dfAgg.index >= testStart].index],
-                           columns = ['signal_Q1', 'signal_rolling_Q1', 'last_signal', 'position'])
-
         dpred = { }
-        dfFeat = { }
 
+        # X_train start:  2017-06-26 	X_test start:  2019-06-07
+        # dfAgg[472:-101]
+        # X_train stop:  2019-06-06 	X_test stop:  2019-10-29
 
+        dfAgg.drop(columns=['ticker_at', 'ticker_tk'], inplace=True)
+
+        # for i in range(472, len(dfAgg) - nTrain - nTest, 1):
         for i in range(472, len(dfAgg) - nTrain - nTest, 1):
-            print(dfAgg[i:nTrain+nTest+i])
-            dpred, dfFeat = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest, dfS)
+            # testDates(dfAgg[i:nTrain+nTest+i],nTrain,nTest,dfS)
+            dpred = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest)
 
-        dpred = dpred.iloc[:-1]
+        # dpred = dpred.iloc[:-1]
 
 
         # --------------------------------------------------------------------------------------------------

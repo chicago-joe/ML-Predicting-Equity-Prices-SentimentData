@@ -33,7 +33,7 @@ from models.ibAlgo import HftModel1
 def fnCreateIBSymbol(ticker_tk=None, ticker_at=None):
 
     if not ticker_tk:
-        ticker_tk='SPY'
+        ticker_tk = 'SPY'
     if not ticker_at:
         ticker_at = 'EQT'
 
@@ -61,8 +61,8 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 
 
     q = """ 
-            SELECT * FROM smadb.tbllivepositionsignal
-            WHERE ticker_tk='%s'
+            SELECT * FROM smadb.tbllivepositionsignal_v2
+            WHERE ticker_tk = '%s'
             order by date desc
             ;
         """ % ticker_tk
@@ -73,9 +73,9 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 
     # get position
     if not df.empty:
-        df = df.loc[df.date<=pd.to_datetime(curDate)]
+        df = df.loc[df.date <= pd.to_datetime(curDate)]
 
-        if len(df)>1:
+        if len(df) > 1:
             logging.info('Live Position Signal loaded: \n{}'.format(df))
             pos = df['position'].values[0]
             posPr = df['position'].values[1]
