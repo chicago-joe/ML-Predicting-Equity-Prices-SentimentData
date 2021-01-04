@@ -336,7 +336,7 @@ if __name__ == '__main__':
         dfAgg.drop(columns=['ticker_at', 'ticker_tk'], inplace=True)
 
         # for i in range(472, len(dfAgg) - nTrain - nTest, 1):
-        for i in range(472, len(dfAgg) - nTrain - nTest, 1):
+        for i in range((len(dfAgg)-nTest-nTrain)-1, len(dfAgg) - nTrain - nTest, 1):
             # testDates(dfAgg[i:nTrain+nTest+i],nTrain,nTest,dfS)
             dpred = predict(dfAgg[i:nTrain + nTest + i], nTrain, nTest)
 
