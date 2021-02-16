@@ -1,0 +1,10 @@
+02/15/2021 07:06:28 PM - INFO - forex_data_eurusd 19_06_28-565.txt saved in: ./upload
+02/15/2021 07:06:28 PM - INFO - Creating temp file: ./upload/forex_data_eurusd 19_06_28-565.txt
+02/15/2021 07:07:23 PM - INFO - Connecting to tws:4003 with clientId 6137...
+02/15/2021 07:07:23 PM - INFO - Connected
+02/15/2021 07:07:23 PM - INFO - Logged on to server version 148
+02/15/2021 07:07:23 PM - INFO - API connection ready
+02/15/2021 07:07:23 PM - INFO - Warning 2106, reqId -1: HMDS data farm connection is OK:cashhmds
+02/15/2021 07:07:23 PM - INFO - Synchronization complete
+02/15/2021 07:07:26 PM - INFO - forex_data_eurusd 19_07_26-565.txt saved in: ./upload
+02/15/2021 07:07:26 PM - INFO - Creating temp file: ./upload/forex_data_eurusd 19_07_26-565.txt
