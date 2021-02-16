@@ -92,7 +92,8 @@ services:
       - APP=GATEWAY
 
   "tws-gui":
-    image: alekna/ib-tws
+    build: ./_GUI
+#    image: alekna/ib-tws
     environment:
       - TZ=America/Chicago
     logging:

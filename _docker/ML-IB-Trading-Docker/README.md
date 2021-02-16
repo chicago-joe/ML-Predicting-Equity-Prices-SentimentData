@@ -3,32 +3,22 @@
 
 ### Procedure
 
-- create an account on Interactive Broker website, to get an id and a password
-
-- git clone from this repository and cd into it
-
-- in docker-compose.yml, edit the TWSUSERID and TWSPASSWORD environment variables
-
 - docker-compose up -d
 
 
 Make sure all services are up and running.
 NOTE: pgweb is often down at first because postgres is still starting. Wait a few seconds,
-re-run docker-compose up -d and pgweb will come online.
+re-run docker-compose up -d and phpweb will come online.
 
 NOTE: To rebuild the entire docker container:
 - docker-compose up --build --force-recreate --no-deps -d
-
-- create the table in the database
-
-docker-compose -f docker-compose.yml exec postgres psql --username=trading -d trading -f ../init/init.sql
 
 - now go to Flower UI:  http://127.0.0.1:5010
 
 You should see a few failed tasks (when we hadn't created yet the DB table), and the latest
 tasks must be successful.
 
-- now go to pgweb UI: http://127.0.0.1:8080
+- now go to phpweb UI: http://127.0.0.1:8080
 
 You should see some records in the forex_data_eurusd table.
 
@@ -36,15 +26,15 @@ You should see some records in the forex_data_eurusd table.
 
 Click on "add data source"
 
-Name: postgres
+Name: mysql
 
-Type: PostgreSQL
+Type: mysql
 
-Host: postgres
+Host: mysql
 
 Database: trading (see .env file)
 
-User: trading (see .env file)
+User: root (see .env file)
 
 Password: trading (see .env file)
 
@@ -57,12 +47,10 @@ Click on its title and then on "Edit".
 Select Postgres data source, and for the query, enter:
 
 SELECT
-  $__time(time),
+  $time,
   value_open
 FROM
-  forex_data_eurusd
-WHERE
-  $__timeFilter(time)
+  forex_data_EURUSD
 
 Click on the "eye" icon on the right to test the query. You should see a graph.
 
