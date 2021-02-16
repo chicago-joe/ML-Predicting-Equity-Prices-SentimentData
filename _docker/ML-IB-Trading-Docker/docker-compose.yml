@@ -92,14 +92,16 @@ services:
       - APP=GATEWAY
 
   "tws-gui":
-    build: ./_GUI
-#    image: alekna/ib-tws
+#    build: ./_GUI
+    image: alekna/ib-tws
     environment:
       - TZ=America/Chicago
     logging:
       driver: "none"
     ports:
       - "5904:5900"
+    volumes:
+      - ./_GUI:/var/lib/GUI
 
   mysql:
     image: mysql:5.7
