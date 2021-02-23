@@ -265,13 +265,15 @@ def predict(df, nTrain, nTest):
     logging.info('Rolling signal:\t %.6f' % dfS.at[df.index[-1], 'signal_rolling_Q1'].astype(float))
     logging.info('Current Position:\t %.2f' % dfS.at[df.index[-1], 'position'].squeeze().astype(float))
 
-
     dfS = dfS[-1:]
     dfS['ticker_tk'] = ticker
     dfS['ticker_at'] = 'EQT'
     dfS.reset_index(inplace=True)
     dfS.date = pd.to_datetime(dfS.date).dt.strftime('%Y-%m-%d')
 
+
+    # --------------------------------------------------------------------------------------------------
+    # upload prediction and position to database for IB Algo ingestion
 
     conn = fnOdbcConnect('defaultdb')
 
@@ -280,22 +282,21 @@ def predict(df, nTrain, nTest):
     conn.disconnect()
     conn.close()
 
-
-
     return dfS
 
 
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # run main
+from celery_tutorial.celery import app
 
-if __name__ == '__main__':
-
+@app.task
+def fnLivePredict():
     # custom pandas settings
     setPandas()
     setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
 
-    path = '_source\\'
+    # path = '_source\\'
 
     # set numpy float format
     floatFormatter = "{:,.6f}".format

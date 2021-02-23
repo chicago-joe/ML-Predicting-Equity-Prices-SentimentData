@@ -95,9 +95,10 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # run main
+from celery_tutorial.celery import app
 
-if __name__ == "__main__":
-
+@app.task
+def fnRunIBTrader():
     setPandas()
     setLogging(LOGGING_DIRECTORY = os.path.join('..\\..\\logging\\', dt.today().strftime('%Y-%m-%d')),
                LOG_FILE_NAME = os.path.basename(__file__),
