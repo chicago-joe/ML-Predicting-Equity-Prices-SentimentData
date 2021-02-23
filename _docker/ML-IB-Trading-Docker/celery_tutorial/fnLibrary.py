@@ -120,6 +120,19 @@ def fnOdbcConnect(dbName='smadb'):
         'allow_local_infile':1,
         'database':          '%s' % dbName
 }
+    # configAdmin = {
+    #     'user':              'doadmin',
+    #     'password':          'r6raohf6jqh5g2yc',
+    #     'host':              'smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com',
+    #     'port':             '25060',
+    #     'client_flags':      [ClientFlag.SSL, ClientFlag.LOCAL_FILES],
+    #     'ssl_ca':            os.path.abspath('..\\..\\.\\_auth\\ssl\\server-ca.pem'),
+    #     'ssl_cert':          os.path.abspath('..\\..\\.\\_auth\\ssl\\client-cert.pem'),
+    #     'ssl_key':           os.path.abspath('..\\..\\.\\_auth\\ssl\\client-key.pem'),
+        # 'autocommit':        True,
+        # 'allow_local_infile':1,
+        # 'database':          '%s' % dbName
+# }
     conn = mysql.connector.connect(**config)
     return conn
 
@@ -128,15 +141,19 @@ def fnOdbcConnect(dbName='smadb'):
 # upload to mysql database
 
 def fnUploadSQL(df=None, conn=None, tblName=None, mode='REPLACE', colNames=None, unlinkFile=True):
+    from sqlalchemy import create_engine
 
-    setLogging(LOG_FILE_NAME = 'upload %s-%s.txt' % (tblName, os.getpid()), level='INFO')
+    engine = create_engine('mysql://aschran89:jlkrg9tdxt5m3dc0@smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com:25060/defaultdb')
+    # setLogging(LOG_FILE_NAME = 'upload %s-%s.txt' % (tblName, os.getpid()), level='INFO')
 
     curTime = dt.time(dt.now()).strftime("%H_%M_%S")
-    tmpFile = setOutputFilePath(OUTPUT_SUBDIRECTORY = 'upload', OUTPUT_FILE_NAME = '%s %s-%s.txt' % (tblName, curTime, os.getpid()))
-    c = conn.cursor()
+    # tmpFile = setOutputFilePath(OUTPUT_SUBDIRECTORY = 'upload', OUTPUT_FILE_NAME = '%s %s-%s.txt' % (tblName, curTime, os.getpid()))
+    # c = conn.cursor()
 
-    logging.info("Creating temp file: %s" % tmpFile)
+    # logging.info("Creating temp file: %s" % tmpFile)
     colsSQL = pd.read_sql('SELECT * FROM %s LIMIT 0;' % (tblName), conn).columns.tolist()
+    strRep = " "
+    q = """REPLACE INTO %s VALUES %s""" %(tblName, strRep)
 
     if colNames:
         # check columns in db table vs dataframe
@@ -147,15 +164,15 @@ def fnUploadSQL(df=None, conn=None, tblName=None, mode='REPLACE', colNames=None,
             logging.warning('----- COLUMN MISMATCH WHEN ATTEMPTING TO UPLOAD %s -----' % tblName)
             if len(set(colsDF) - set(colsSQL)) > 0:
                 logging.warning('Columns in dataframe not found in %s: \n%s' % (tblName, list((set(colsDF) - set(colsSQL)))))
-            else:
-                df[colsDF].to_csv(tmpFile, sep="\t", na_rep="\\N", float_format="%.8g", header=False, index=False, doublequote=False)
-                query = """LOAD DATA LOCAL INFILE '%s' %s INTO TABLE %s LINES TERMINATED BY '\r\n'(%s)""" % \
-                        (tmpFile.replace('\\','/'), mode, tblName, colsDF)
+            # else:
+            #     df[colsDF].to_csv(tmpFile, sep="\t", na_rep="\\N", float_format="%.8g", header=False, index=False, doublequote=False)
+            #     query = """LOAD DATA LOCAL INFILE '%s' %s INTO TABLE %s LINES TERMINATED BY '\r\n'(%s)""" % \
+            #             (tmpFile.replace('\\','/'), mode, tblName, colsDF)
 
-                logging.debug(query)
-                rv = c.execute(query)
-                logging.debug("Number of rows affected: %s" % len(df))
-                return rv
+                # logging.debug(query)
+                # rv = c.execute(query)
+                # logging.debug("Number of rows affected: %s" % len(df))
+                # return rv
 
     # check columns in db table vs dataframe
     colsDF = df.columns.tolist()
@@ -168,18 +185,23 @@ def fnUploadSQL(df=None, conn=None, tblName=None, mode='REPLACE', colNames=None,
         if len(set(colsDF) - set(colsSQL))> 0:
             logging.warning('Columns in dataframe not found in %s: %s' % (tblName, list((set(colsDF) - set(colsSQL)))))
 
+    df.replace([-np.inf,np.inf],np.nan,inplace=True)
+    df.to_sql(con=engine, name='tablename_temp', if_exists='replace')
+    connection = con.connect()
+    connection.execute(text("INSERT INTO tablename SELECT * FROM tablename_temp ON DUPLICATE KEY UPDATE tablename.field_to_update=tablename_temp.field_to_update"))
+    connection.execute(text('DROP TABLE tablename_temp '))
+    df[colsSQL].to_sql(name=tblName,con=engine,if_exists='append',index=False)
+    # df[colsSQL].to_csv(tmpFile, sep="\t", na_rep="\\N", float_format="%.8g", header=False, index=False, doublequote=False)
+    # query = """LOAD DATA LOCAL INFILE '%s' %s INTO TABLE %s LINES TERMINATED BY '\r\n'""" % \
+    #         (tmpFile.replace('\\','/'), mode, tblName)
 
-    df[colsSQL].to_csv(tmpFile, sep="\t", na_rep="\\N", float_format="%.8g", header=False, index=False, doublequote=False)
-    query = """LOAD DATA LOCAL INFILE '%s' %s INTO TABLE %s LINES TERMINATED BY '\r\n'""" % \
-            (tmpFile.replace('\\','/'), mode, tblName)
-
-    logging.debug(query)
-    rv = c.execute(query)
+    # logging.debug(query)
+    # rv = c.execute(query)
     logging.info("Number of rows affected: %s" % len(df))
 
-    if unlinkFile:
-        os.unlink(tmpFile)
-        logging.info("Deleting temporary file: {}".format(tmpFile))
-    logging.info("DONE")
-    return rv
+    # if unlinkFile:
+    #     os.unlink(tmpFile)
+    #     logging.info("Deleting temporary file: {}".format(tmpFile))
+    # logging.info("DONE")
+    # return rv
 
