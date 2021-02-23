@@ -1,0 +1,20 @@
+https://www.digitalocean.com/docs/databases/mysql/how-to/connect/
+
+connstring: "mysql://doadmin:pyuuzosebyvirw78@smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com:25060/defaultdb?ssl-mode=REQUIRED"
+
+connParams:
+username = doadmin
+password = r6raohf6jqh5g2yc
+username = aschran89
+password = jlkrg9tdxt5m3dc0
+host = smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com
+port = 25060
+database = defaultdb
+sslmode = REQUIRED
+
+
+connFlags: mysql -u doadmin -p pyuuzosebyvirw78 -h smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com -P 25060 -D defaultdb
+
+
+upload data:
+mysql -u doadmin -p -h mysql-test-do-user-4915853-0.db.ondigitalocean.com -P 25060 your_database_name < /path/to/database_file_name.sql
