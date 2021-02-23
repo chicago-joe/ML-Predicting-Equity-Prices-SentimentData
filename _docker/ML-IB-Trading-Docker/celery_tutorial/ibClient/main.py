@@ -23,7 +23,7 @@ currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
 
-from fnCommon import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
+from celery_tutorial.fnLibrary import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
 
 from models.ibAlgo import HftModel1
 
@@ -61,13 +61,13 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 
 
     q = """ 
-            SELECT * FROM smadb.tbllivepositionsignal_v2
+            SELECT * FROM defaultdb.tbllivepositionsignal_v2
             WHERE ticker_tk = '%s'
             order by date desc
             ;
         """ % ticker_tk
 
-    conn = fnOdbcConnect('smadb')
+    conn = fnOdbcConnect('defaultdb')
     df = pd.read_sql_query(q, conn)
     conn.close()
 

@@ -134,7 +134,7 @@ if __name__=='__main__':
         reqTickers = serTickers.unique().tolist()
 
 
-        q = """select distinct ticker_tk from smadb.tblactivityfeedsma"""
+        q = """select distinct ticker_tk from smadb.tblactivityfeedsma_v2"""
         conn = fnOdbcConnect('smadb')
         df1 = pd.read_sql_query(q, conn)
 

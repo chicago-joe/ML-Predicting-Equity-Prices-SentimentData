@@ -5,7 +5,7 @@ services:
   rabbit:
     hostname: rabbit
     image: rabbitmq:3.7.3
-    restart: on-failure
+    restart: unless-stopped
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
@@ -25,15 +25,14 @@ services:
         - rabbit
     depends_on:
         - rabbit
-#    restart: always
+    restart: unless-stopped
 
   #Python Celery worker
   worker-1:
     build: ./celery-ib
 #    command: celery -A worker -l "DEBUG" -Ofair --concurrency=1
-#    command:  celery -A celery_tutorial.celery_app worker -l "DEBUG" -0fair --concurrency=1
     command:  celery -A celery_tutorial.celery_app worker -l "DEBUG"
-    restart: on-failure
+    restart: unless-stopped
     environment:
       - BROKER=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbit
       - ECHEANCE_CAC40=${ECHEANCE_CAC40}
@@ -51,13 +50,12 @@ services:
   beat:
     build: ./celery-ib
     command: celery -A celery_tutorial.celery_app beat -l "DEBUG"
-    restart: on-failure
+    restart: unless-stopped
     environment:
       - BROKER=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbit
     links:
         - rabbit
     depends_on:
-        - mysql
         - rabbit
     volumes:
       - ./celery_tutorial:/celery_tutorial
@@ -72,10 +70,9 @@ services:
     volumes:
       - ./ib-docker/ib/IBController.ini:/root/IBController/IBController.ini
       - ./ib-docker/ib/jts.ini:/root/Jts/jts.ini
-    restart: on-failure
+    restart: unless-stopped
     environment:
       - TZ=America/Chicago
-      # Variables pulled from /IBController/IBControllerGatewayStart.sh
       - VNC_PASSWORD=password # CHANGEME
       - TWS_MAJOR_VRSN=974
       - IBC_INI=/root/IBController/IBController.ini
@@ -103,39 +100,21 @@ services:
     volumes:
       - ./_GUI:/var/lib/GUI
 
-  mysql:
-    image: mysql:5.7
-    ports:
-      - "3309:3306"
-    command: --init-file /data/application/init.sql
-    volumes:
-#      - ./mysqldata:/var/lib/data
-      - ./db/init.sql:/data/application/init.sql
-    restart: on-failure
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DB}
-#      MYSQL_USER: root
-      MYSQL_TAGS: dev
-      SERVICE_NAME: mysql
-
   #Database web client
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    depends_on:
-      - mysql
+    image: phpmyadmin/phpmyadmin      # :5.0.4
     environment:
-      PMA_HOST: mysql
-      MYSQL_USERNAME: root
-      MYSQL_ROOT_PASSWORD: trading
-    restart: always
+      PMA_HOST: smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com
+      MYSQL_USERNAME: aschran89
+      MYSQL_PWD: jlkrg9tdxt5m3dc0
+    restart: unless-stopped
     ports:
       - 8081:80
 
   #Grafana to explore and visualise data
   grafana:
-    image: grafana/grafana:5.0.3
-    restart: always
+    image: grafana/grafana      # :5.0.3
+    restart: unless-stopped
     ports:
         - "127.0.0.1:7000:3000"
     volumes:

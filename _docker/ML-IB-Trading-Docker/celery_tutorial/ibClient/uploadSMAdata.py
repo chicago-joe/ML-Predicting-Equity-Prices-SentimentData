@@ -47,7 +47,7 @@ import seaborn as sns
 from statsmodels.graphics.gofplots import qqplot as qp
 
 # custom imports
-from fnCommon import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
+from celery_tutorial.fnLibrary import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
 
 LOG_FILE_NAME = os.path.basename(__file__)
 
@@ -302,13 +302,13 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
 
     q = """
             SELECT * 
-            FROM smadb.tblactivityfeedsma_v2 
+            FROM defaultdb.tblactivityfeedsma 
             WHERE ticker_tk = '%s' 
             AND timestampET >= '%s'
             ;   
         """ % (ticker, startDate)
 
-    conn = fnOdbcConnect('smadb')
+    conn = fnOdbcConnect('defaultdb')
 
     df_temp = pd.read_sql_query(q, conn)
     conn.disconnect()
@@ -426,7 +426,7 @@ def fnAggActivityFeed(df1, df2, dfStk, ticker=None):
 
 
 # --------------------------------------------------------------------------------------------------
-# load security prices from smadb
+# load security prices from defaultdb
 
 def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
 
@@ -437,14 +437,14 @@ def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
 
     q = """
             SELECT * 
-            FROM smadb.tblsecuritypricesyahoo 
+            FROM defaultdb.tblsecuritypricesyahoo 
             WHERE ticker_tk = '%s' 
             AND date >= '%s'
             AND date <= '%s'
             ;   
         """ % (ticker, startDate, endDate)
 
-    conn = fnOdbcConnect('smadb')
+    conn = fnOdbcConnect('defaultdb')
 
     dfStk = pd.read_sql_query(q, conn)
 
@@ -466,14 +466,14 @@ def fnLoadTblSecurityPricesYahoo(ticker, startDate=None, endDate=None):
 # --------------------------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------------------------
 # run main
+from celery_tutorial.celery import app
 
-if __name__ == '__main__':
+@app.task
+def fnUploadSMA():
 
     # custom pandas settings
     setPandas()
     setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
-
-    path = '_source\\'
 
     # set numpy float format
     floatFormatter = "{:,.6f}".format
@@ -502,8 +502,8 @@ if __name__ == '__main__':
         dfLiveFeatures.rename(columns={'index':'date'},inplace=True)
 
         # upload live features
-        conn = fnOdbcConnect('smadb')
-        fnUploadSQL(dfLiveFeatures, conn, 'smadb', 'tbllivepredictionfeatures', 'REPLACE', None, True)
+        conn = fnOdbcConnect('defaultdb')
+        fnUploadSQL(dfLiveFeatures, conn, 'tbllivepredictionfeatures', 'REPLACE', None, True)
         conn.disconnect()
         conn.close()
 
@@ -521,3 +521,59 @@ if __name__ == '__main__':
     for handler in logging.root.handlers:
         handler.close()
     logging.shutdown()
+
+
+# if __name__ == '__main__':
+#
+#     # custom pandas settings
+#     setPandas()
+#     setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
+#
+#     path = '_source\\'
+#
+#     # set numpy float format
+#     floatFormatter = "{:,.6f}".format
+#     np.set_printoptions(formatter = {'float_kind':floatFormatter})
+#
+#
+#     # --------------------------------------------------------------------------------------------------
+#
+#     try:
+#
+#         # load SMA activity data
+#         dfRaw = fnLoadActivityFeed(ticker = ticker)
+#         dfFutures = fnLoadActivityFeed(ticker = 'ES_F')
+#
+#         # pull stk prices from table
+#         endDate = pd.to_datetime(datetime.now()).strftime('%Y-%m-%d')
+#         dfStk = fnLoadTblSecurityPricesYahoo(ticker, startDate = '2010-01-02', endDate = endDate)
+#
+#         # aggregate feature data
+#         dfAgg = fnAggActivityFeed(dfRaw, dfFutures, dfStk = dfStk, ticker=ticker)
+#
+#         dfLiveFeatures = dfAgg.copy()
+#         dfLiveFeatures['ticker_at'] = 'EQT'
+#         dfLiveFeatures['ticker_tk'] = ticker
+#         dfLiveFeatures.reset_index(inplace=True)
+#         dfLiveFeatures.rename(columns={'index':'date'},inplace=True)
+#
+#         # upload live features
+#         conn = fnOdbcConnect('defaultdb')
+#         fnUploadSQL(dfLiveFeatures, conn, 'tbllivepredictionfeatures', 'REPLACE', None, True)
+#         conn.disconnect()
+#         conn.close()
+#
+#
+#         # --------------------------------------------------------------------------------------------------
+#         # --------------------------------------------------------------------------------------------------
+#         # close logger / handlers
+#
+#         logging.info("========== END PROGRAM ==========")
+#
+#     except Exception as e:
+#         logging.error(str(e), exc_info=True)
+#
+#     # CLOSE LOGGING
+#     for handler in logging.root.handlers:
+#         handler.close()
+#     logging.shutdown()

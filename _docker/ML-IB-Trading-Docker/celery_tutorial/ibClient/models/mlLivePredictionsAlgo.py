@@ -40,7 +40,7 @@ import seaborn as sns
 from statsmodels.graphics.gofplots import qqplot as qp
 
 # custom imports
-from fnCommon import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
+from celery_tutorial.fnLibrary import setPandas, fnUploadSQL, setOutputFilePath, setLogging, fnOdbcConnect
 
 LOG_FILE_NAME = os.path.basename(__file__)
 
@@ -208,10 +208,10 @@ def predict(df, nTrain, nTest):
 
     q = """
             SELECT date, last_signal
-            FROM smadb.tbllivepositionsignal_v2
+            FROM defaultdb.tbllivepositionsignal_v2
         """
 
-    conn = fnOdbcConnect('smadb')
+    conn = fnOdbcConnect('defaultdb')
 
     # df.index=df.index.strftime('%Y-%m-%d').str.replace('10-','12-')
     dfQ = pd.read_sql_query(q, conn, parse_dates=True)
@@ -273,10 +273,10 @@ def predict(df, nTrain, nTest):
     dfS.date = pd.to_datetime(dfS.date).dt.strftime('%Y-%m-%d')
 
 
-    conn = fnOdbcConnect('smadb')
+    conn = fnOdbcConnect('defaultdb')
 
     # df.index=df.index.strftime('%Y-%m-%d').str.replace('10-','12-')
-    fnUploadSQL(dfS, conn, 'smadb', 'tbllivepositionsignal_v2', 'REPLACE', None, True)
+    fnUploadSQL(dfS, conn, 'tbllivepositionsignal_v2', 'REPLACE', None, True)
     conn.disconnect()
     conn.close()
 
@@ -306,12 +306,12 @@ if __name__ == '__main__':
 
         q = """
                 SELECT * 
-                FROM smadb.tbllivepredictionfeatures
+                FROM defaultdb.tbllivepredictionfeatures
                 WHERE ticker_tk = '%s'
                 
             """ % ticker
 
-        conn = fnOdbcConnect('smadb')
+        conn = fnOdbcConnect('defaultdb')
         dfAgg = pd.read_sql_query(q, conn, parse_dates = True)
         conn.disconnect()
         conn.close()

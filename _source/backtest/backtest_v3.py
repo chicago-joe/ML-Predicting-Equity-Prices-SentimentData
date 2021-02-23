@@ -336,7 +336,7 @@ def fnLoadActivityFeed(ticker='SPY', startDate=None):
 
     q = """
             SELECT * 
-            FROM smadb.tblactivityfeedsma 
+            FROM smadb.tblactivityfeedsma_v2 
             WHERE ticker_tk = '%s' 
             AND timestampET >= '%s'
             ;   

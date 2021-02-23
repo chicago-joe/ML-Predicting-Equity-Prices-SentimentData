@@ -18,3 +18,8 @@ connFlags: mysql -u doadmin -p pyuuzosebyvirw78 -h smadb-mysql-nyc1-75115-do-use
 
 upload data:
 mysql -u doadmin -p -h mysql-test-do-user-4915853-0.db.ondigitalocean.com -P 25060 your_database_name < /path/to/database_file_name.sql
+
+
+
+docker registry private API key:
+57d6245cde802540989f2156aa2e02e0adc886d979f11c78d824c196646f8c4b

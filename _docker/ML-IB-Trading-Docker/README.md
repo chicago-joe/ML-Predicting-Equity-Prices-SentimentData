@@ -1,17 +1,13 @@
-
-
-
 ### Procedure
 
 - docker-compose up -d
 
-
 Make sure all services are up and running.
-NOTE: pgweb is often down at first because postgres is still starting. Wait a few seconds,
+NOTE: phpweb is often down at first because postgres is still starting. Wait a few seconds,
 re-run docker-compose up -d and phpweb will come online.
 
 NOTE: To rebuild the entire docker container:
-- docker-compose up --build --force-recreate --no-deps -d
+docker-compose up --build --force-recreate --no-deps -d
 
 - now go to Flower UI:  http://127.0.0.1:5010
 
