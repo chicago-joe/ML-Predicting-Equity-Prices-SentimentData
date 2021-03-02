@@ -11,12 +11,13 @@ docker-compose up --build --force-recreate --no-deps -d
 
 - now go to Flower UI:  http://127.0.0.1:5010
 
-You should see a few failed tasks (when we hadn't created yet the DB table), and the latest
-tasks must be successful.
+You should see a few failed tasks (which we haven't scheduled yet)
 
-- now go to phpweb UI: http://127.0.0.1:8080
+- now go to phpmyadmin UI: http://127.0.0.1:8081
+  - user: aschran89
+  - pwd: jlkrg9tdxt5m3dc0
 
-You should see some records in the forex_data_eurusd table.
+You should see all available sma data from our cloud db in the tables.
 
 - now go to Grafana: http://127.0.0.1:7000  (credentials: admin/password)
 
@@ -24,36 +25,41 @@ Click on "add data source"
 
 Name: mysql
 
-Type: mysql
+- Type: mysql
 
-Host: mysql
+- Host: mysql
 
-Database: trading (see .env file)
+- Database: same as digitalocean db 
 
-User: root (see .env file)
+- User: same as digitalocean db username
 
-Password: trading (see .env file)
+- Password: same as digitalocean db password
 
-SSL mode: disable
+- SSL mode: disable
 
 Then click on "create a dashboard", type "Graph". When your graph panel is created,
 
 Click on its title and then on "Edit".
 
-Select Postgres data source, and for the query, enter:
-
-SELECT
-  $time,
-  value_open
-FROM
-  forex_data_EURUSD
+Select mysql data source, and for the query, enter your query. 
 
 Click on the "eye" icon on the right to test the query. You should see a graph.
 
 Then click on "Save dashboard" on the top menu.
 
 
-That's it! You now have a fully functioning automated trading platform!
+
+## Login to TWS Live
+- You should now be able to login to TWS Live using VNC Viewer:
+
+  - Remote Host Connection:   http://127.0.0.1:5904
+
+  - Password:   root
+
+In this way, you can run and trade in TWS Live as you normally would, while the paper trading algorithm can continue running with shared market data 
+subscription.
+
+
 
 
 
