@@ -1,4 +1,5 @@
-FROM ubuntu:18.04
+#FROM ubuntu:18.04
+FROM ghcr.io/chicago-joe/sma-ib-trading-docker_ubuntu:18.04.1
 MAINTAINER Joseph Loss <chicago-joe>
 
 

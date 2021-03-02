@@ -4,7 +4,7 @@ services:
   #RabbitMQ broker, for Celery
   rabbit:
     hostname: rabbit
-    image: rabbitmq:3.7.3
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_rabbitmq:v3.7.3
     restart: unless-stopped
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
@@ -12,7 +12,8 @@ services:
 
   #Flower UI for Celery queue
   ui:
-    build: ./celery-ib
+#    build: ./celery-ib
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_celery:v1.1
     command: flower -A celery_tutorial.celery_app --port=5555 --broker=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbit --auto_refresh=True --loglevel="DEBUG"
     environment:
       - BROKER=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbit
@@ -29,7 +30,8 @@ services:
 
   #Python Celery worker
   worker-1:
-    build: ./celery-ib
+#    build: ./celery-ib
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_celery:v1.1
 #    command: celery -A worker -l "DEBUG" -Ofair --concurrency=1
     command:  celery -A celery_tutorial.celery_app worker -l "DEBUG"
     restart: unless-stopped
@@ -48,7 +50,8 @@ services:
 
   #Celery beat, to schedule periodic tasks
   beat:
-    build: ./celery-ib
+#    build: ./celery-ib
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_celery:v1.1
     command: celery -A celery_tutorial.celery_app beat -l "DEBUG"
     restart: unless-stopped
     environment:
@@ -63,7 +66,8 @@ services:
 
   #Interactive Broker containerized API
   tws:
-    build: ./ib-docker
+#    build: ./ib-docker
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_tws:v1.1
     ports:
       - "4003:4003"
       - "5901:5900"
@@ -90,7 +94,7 @@ services:
 
   "tws-gui":
 #    build: ./_GUI
-    image: alekna/ib-tws
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_tws-gui:v1.1
     environment:
       - TZ=America/Chicago
     logging:
@@ -102,9 +106,11 @@ services:
 
   #Database web client
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin      # :5.0.4
+#    image: phpmyadmin/phpmyadmin      # :5.0.4
+    image: ghcr.io/chicago-joe/sma-ib-trading-docker_phpmyadmin:latest
     environment:
       PMA_HOST: smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com
+      PMA_PORT: 25060
       MYSQL_USERNAME: aschran89
       MYSQL_PWD: jlkrg9tdxt5m3dc0
     restart: unless-stopped
@@ -113,7 +119,8 @@ services:
 
   #Grafana to explore and visualise data
   grafana:
-    image: grafana/grafana      # :5.0.3
+#    image: grafana/grafana      # :5.0.3
+    image: ghcr.io/chicago-joe/sma-ib-trading-grafana:v1.1
     restart: unless-stopped
     ports:
         - "127.0.0.1:7000:3000"

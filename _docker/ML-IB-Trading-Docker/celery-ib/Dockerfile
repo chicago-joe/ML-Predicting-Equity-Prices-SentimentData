@@ -1,5 +1,6 @@
 ARG PYTHON_VERSION="3.7"
-FROM python:$PYTHON_VERSION as builder
+#FROM python:$PYTHON_VERSION as builder
+FROM ghcr.io/chicago-joe/sma-ib-trading_python37:v$PYTHON_VERSION as builder
 
 #RUN pip3 install celery==4.4 flower requests psycopg2 ib_insync pandas numpy matplotlib
 #WORKDIR /app
