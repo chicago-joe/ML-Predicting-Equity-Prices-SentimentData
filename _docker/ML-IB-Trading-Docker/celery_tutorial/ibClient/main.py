@@ -25,7 +25,7 @@ sys.path.append(parentdir)
 
 from celery_tutorial.fnLibrary import setPandas, fnOdbcConnect, setLogging, fnUploadSQL
 
-from models.ibAlgo import HftModel1
+from celery_tutorial.ibClient.models.ibAlgo import HftModel1
 
 # --------------------------------------------------------------------------------------------------
 # create IB contract symbiology
@@ -73,7 +73,7 @@ def fnGetLivePositionSignal(ticker_tk=None, trdDate=None):
 
     # get position
     if not df.empty:
-        df = df.loc[df.date <= pd.to_datetime(curDate)]
+        df = df.loc[df.date <= pd.to_datetime(trdDate)]
 
         if len(df) > 1:
             logging.info('Live Position Signal loaded: \n{}'.format(df))
@@ -100,7 +100,7 @@ from celery_tutorial.celery import app
 @app.task
 def fnRunIBTrader():
     setPandas()
-    setLogging(LOGGING_DIRECTORY = os.path.join('..\\..\\logging\\', dt.today().strftime('%Y-%m-%d')),
+    setLogging(LOGGING_DIRECTORY = os.path.join('../logging/', dt.today().strftime('%Y-%m-%d')),
                LOG_FILE_NAME = os.path.basename(__file__),
                level = LOG_LEVEL)
 
@@ -108,15 +108,13 @@ def fnRunIBTrader():
     logging.info('Process ID: {}'.format(os.getpid()))
     curDate = dt.today().strftime('%Y-%m-%d')
 
-
     try:
 
         pos, posPr = fnGetLivePositionSignal(ticker_tk = ticker, trdDate = curDate)
 
-        # TWS_PORT = sys.argv[1]
-        TWS_PORT = 7498
-        TWS_HOST = os.environ.get('TWS_HOST', '127.0.0.1')
-        TWS_PORT = os.environ.get('TWS_PORT', TWS_PORT)
+
+        TWS_HOST = os.environ.get('TWS_HOST', 'tws')
+        TWS_PORT = os.environ.get('TWS_PORT', 4003)
 
         logging.info('Connecting on host: {} port: {}'.format(TWS_HOST, TWS_PORT))
 
@@ -127,8 +125,8 @@ def fnRunIBTrader():
                 client_id = 1,
         )
 
-        # tickerIB = fnCreateIBSymbol(ticker_tk = 'SPY', ticker_at = 'EQT')
-        tickerIB = fnCreateIBSymbol(ticker_tk = 'EURUSD', ticker_at = 'FX')
+        tickerIB = fnCreateIBSymbol(ticker_tk = 'SPY', ticker_at = 'EQT')
+        # tickerIB = fnCreateIBSymbol(ticker_tk = 'EURUSD', ticker_at = 'FX')
 
         # run model
         model.run(ticker_tk = tickerIB, position = pos, prevPosition = posPr)
@@ -141,7 +139,10 @@ def fnRunIBTrader():
     except Exception as e:
         logging.error(str(e), exc_info=True)
 
+
     # CLOSE LOGGING
     for handler in logging.root.handlers:
         handler.close()
     logging.shutdown()
+
+# fnRunIBTrader()
