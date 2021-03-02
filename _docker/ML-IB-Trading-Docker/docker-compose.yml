@@ -120,7 +120,7 @@ services:
   #Grafana to explore and visualise data
   grafana:
 #    image: grafana/grafana      # :5.0.3
-    image: ghcr.io/chicago-joe/sma-ib-trading-grafana:v1.1
+    image: ghcr.io/chicago-joe/sma-ib-trading-grafana:v2.1
     restart: unless-stopped
     ports:
         - "127.0.0.1:7000:3000"
