@@ -294,7 +294,7 @@ from celery_tutorial.celery import app
 def fnLivePredict():
     # custom pandas settings
     setPandas()
-    setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
+    setLogging(LOGGING_DIRECTORY = '../logging/', LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
 
     # path = '_source\\'
 

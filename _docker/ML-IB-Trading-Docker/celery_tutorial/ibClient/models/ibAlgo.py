@@ -7,18 +7,18 @@
 
 from ib_insync import *
 import os, sys
-import nest_asyncio
-nest_asyncio.apply()
-
-
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-sys.path.append(parentdir)
-
+from random import randint
 from celery_tutorial.ibClient.util import order_util, dt_util
 import pandas as pd
 import numpy as np
 import logging
+
+import nest_asyncio
+nest_asyncio.apply()
+
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -54,12 +54,14 @@ class BaseModel(object):
         self.symbols = list(self.symbol_map.values())
 
     def connect_to_ib(self):
-        self.ib.connect(self.host, self.port, clientId = self.client_id)
+        # self.ib.reqCurrentTime()
+        id = randint(0,1000)
+        self.client_id = id
 
-    # def request_pnl_updates(self):
-    # 	account = self.ib.managedAccounts()[0]
-    # 	self.ib.reqPnL(account)
-    # 	self.ib.pnlEvent += self.on_pnl
+        if not self.ib.isConnected():
+            self.ib.connect(self.host, self.port, self.client_id,timeout = 300)
+            self.ib.waitOnUpdate(timeout=0.1)
+
 
     def on_pnl(self, pnl):
         """ Simply store a copy of the latest PnL whenever where are changes """
@@ -395,6 +397,8 @@ class HftModel1(BaseModel):
         else:
             qty = (cash / last) * abs(pos) * 1
 
+        qty = int(qty)
+
         tradeOpen = self.place_market_order(cnOrder, qty, self.on_filled)
         logging.info('Order placed: {}'.format(tradeOpen))
 
@@ -446,6 +450,8 @@ class HftModel1(BaseModel):
         else:
             qty = (cash / last) * abs(pos) * 1
 
+        qty = int(qty)
+
         tradeOpen = self.place_market_order(cnOrder, qty, self.on_filled)
         logging.info('Order placed: {}'.format(tradeOpen))
 
@@ -488,6 +494,8 @@ class HftModel1(BaseModel):
                 trdShares = (cash / last) * abs(pos) * -1
             else:
                 trdShares = (cash / last) * abs(pos) * 1
+
+        trdShares = int(trdShares)
 
         trade = self.place_market_order(cnOrder, trdShares, self.on_filled)
         logging.info('Order placed: {}'.format(trade))

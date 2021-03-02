@@ -473,7 +473,8 @@ def fnUploadSMA():
 
     # custom pandas settings
     setPandas()
-    setLogging(LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
+    setLogging(LOGGING_DIRECTORY = '../logging/', LOG_FILE_NAME = LOG_FILE_NAME, level = LOG_LEVEL)
+
 
     # set numpy float format
     floatFormatter = "{:,.6f}".format
