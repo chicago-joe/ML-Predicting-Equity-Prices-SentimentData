@@ -109,8 +109,8 @@ def fnOdbcConnect(dbName='smadb'):
 
     config = {
         'user':              'aschran89',
-        'password':          'jlkrg9tdxt5m3dc0',
-        'host':              'smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com',
+        'password':          'dz78ox0f50mn7xno',
+        'host':              'smadb-mysql-nyc3-92441-do-user-8902518-0.b.db.ondigitalocean.com',
         'port':             '25060',
         # 'client_flags':      [ClientFlag.SSL, ClientFlag.LOCAL_FILES],
         # 'ssl_ca':            os.path.abspath('..\\..\\.\\_auth\\ssl\\server-ca.pem'),
@@ -254,6 +254,8 @@ def fnUploadSQL(df=None, conn=None, tblName=None, mode='REPLACE', colNames=None,
             c.execute(q)
 
     return
+
+
 # --------------------------------------------------------------------------------------------------
 
 
