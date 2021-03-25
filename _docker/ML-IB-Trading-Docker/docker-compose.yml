@@ -66,11 +66,13 @@ services:
 
   #Interactive Broker containerized API
   tws:
-#    build: ./ib-docker
-    image: ghcr.io/chicago-joe/sma-ib-trading-docker_tws:v1.1
+    build: ./ib-docker
+#    image: ghcr.io/chicago-joe/sma-ib-trading-docker_tws:v1.1
+#    network_mode: host
     ports:
-      - "4003:4003"
-      - "5901:5900"
+      - "4002:4002"
+      - "5900:5900"
+#      - "8080:8080"
     volumes:
       - ./ib-docker/ib/IBController.ini:/root/IBController/IBController.ini
       - ./ib-docker/ib/jts.ini:/root/Jts/jts.ini
@@ -84,13 +86,18 @@ services:
       - TWS_PATH=/root/Jts
       - TWS_CONFIG_PATH=/root/Jts
       - LOG_PATH=/opt/IBController/Logs
-      - JAVA_PATH=/opt/i4j_jres/1.8.0_152/bin # JRE is bundled starting with TWS 952 
+      - JAVA_PATH=/opt/i4j_jres/1.8.0_152/bin # JRE is bundled starting with TWS 952
       - TRADING_MODE=paper # either paper or live
       - TWSUSERID=schran892 # IB account
       - TWSPASSWORD=Quant1984! # IB account password
       - FIXUSERID=
       - FIXPASSWORD=
       - APP=GATEWAY
+#      - DB_UPSTREAM=http://${DOCKER_GATEWAY_HOST:-host.docker.internal}:3000
+#    extra_hosts:
+#      - "outside:127.0.0.1"
+#      - "host.docker.internal:host-gateway"
+
 
   "tws-gui":
 #    build: ./_GUI

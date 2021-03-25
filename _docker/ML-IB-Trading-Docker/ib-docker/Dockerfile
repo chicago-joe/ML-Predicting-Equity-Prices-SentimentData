@@ -1,57 +1,51 @@
-#FROM ubuntu:18.04
-FROM ghcr.io/chicago-joe/sma-ib-trading-docker_ubuntu:18.04.1
-MAINTAINER Joseph Loss <chicago-joe>
+FROM ubuntu:latest AS builder
 
-
-RUN  apt-get update \
-  && apt-get install -y wget \
-  && apt-get install -y unzip \
-  && apt-get install -y xvfb \
-  && apt-get install -y libxtst6 \
-  && apt-get install -y libxrender1 \
-  && apt-get install -y libxi6 \
-  && apt-get install -y x11vnc \
-  && apt-get install -y socat \
-  && apt-get install -y software-properties-common \
-  && apt-get install -y dos2unix
+RUN apt-get update
+RUN apt-get install -y unzip dos2unix wget
 
 # Setup IB TWS
-RUN mkdir -p /opt/TWS
-WORKDIR /opt/TWS
+WORKDIR /root
 RUN wget -q http://cdn.quantconnect.com/interactive/ibgateway-latest-standalone-linux-x64-v974.4g.sh
 RUN chmod a+x ibgateway-latest-standalone-linux-x64-v974.4g.sh
 
-# Setup  IBController
-RUN mkdir -p /opt/IBController/ && mkdir -p /opt/IBController/Logs
-WORKDIR /opt/IBController/
-RUN wget -q http://cdn.quantconnect.com/interactive/IBController-QuantConnect-3.2.0.5.zip
-RUN unzip ./IBController-QuantConnect-3.2.0.5.zip
-RUN chmod -R u+x *.sh && chmod -R u+x Scripts/*.sh
+RUN wget -q --progress=bar:force:noscroll --show-progress https://github.com/IbcAlpha/IBC/releases/download/3.8.1/IBCLinux-3.8.1.zip -O ibc.zip
+RUN unzip ibc.zip -d /opt/ibc
+RUN chmod a+x /opt/ibc/*.sh /opt/ibc/*/*.sh
 
-WORKDIR /
+
+
+
+COPY run.sh run.sh
+RUN dos2unix run.sh
+
+# Application
+FROM ubuntu:latest
+
+RUN apt-get update
+RUN apt-get install -y x11vnc xvfb socat
+
+WORKDIR /root
+
+COPY --from=builder /root/ibgateway-latest-standalone-linux-x64-v974.4g.sh ibgateway-latest-standalone-linux-x64-v974.4g.sh
 
 # Install TWS
-RUN yes n | /opt/TWS/ibgateway-latest-standalone-linux-x64-v974.4g.sh
+RUN yes n | ./ibgateway-latest-standalone-linux-x64-v974.4g.sh
+
+
+#RUN yes n | ./install-ibgateway.sh
+
+RUN mkdir .vnc
+RUN x11vnc -storepasswd 1358 .vnc/passwd
+
+COPY --from=builder /opt/ibc /opt/ibc
+COPY --from=builder /root/run.sh run.sh
+
+COPY ibc_config.ini ibc/config.ini
 
 ENV DISPLAY :0
+ENV TRADING_MODE paper
+EXPOSE 4002
+EXPOSE 5900
 
-ADD runscript.sh runscript.sh
-ADD ./vnc/xvfb_init /etc/init.d/xvfb
-ADD ./vnc/vnc_init /etc/init.d/vnc
-ADD ./vnc/xvfb-daemon-run /usr/bin/xvfb-daemon-run
+CMD ./run.sh
 
-RUN chmod -R u+x runscript.sh \
-  && chmod -R 777 /usr/bin/xvfb-daemon-run \
-  && chmod 777 /etc/init.d/xvfb \
-  && chmod 777 /etc/init.d/vnc
-
-RUN dos2unix /usr/bin/xvfb-daemon-run \
-  && dos2unix /etc/init.d/xvfb \
-  && dos2unix /etc/init.d/vnc \
-  && dos2unix runscript.sh
-
-# Below files copied during build to enable operation without volume mount
-COPY ./ib/IBController.ini /root/IBController/IBController.ini
-COPY ./ib/jts.ini /root/Jts/jts.ini
-
-CMD bash runscript.sh
