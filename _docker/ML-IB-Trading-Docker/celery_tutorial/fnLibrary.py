@@ -143,7 +143,7 @@ def fnOdbcConnect(dbName='smadb'):
 def fnUploadSQL(df=None, conn=None, tblName=None, mode='REPLACE', colNames=None, unlinkFile=True):
     from sqlalchemy import create_engine
 
-    engine = create_engine('mysql://aschran89:jlkrg9tdxt5m3dc0@smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com:25060/defaultdb')
+    engine = create_engine('mysql://aschran89:dz78ox0f50mn7xno@smadb-mysql-nyc3-92441-do-user-8902518-0.b.db.ondigitalocean.com:25060/defaultdb')
     # setLogging(LOG_FILE_NAME = 'upload %s-%s.txt' % (tblName, os.getpid()), level='INFO')
 
     curTime = dt.time(dt.now()).strftime("%H_%M_%S")

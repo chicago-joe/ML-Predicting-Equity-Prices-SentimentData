@@ -43,22 +43,22 @@ app = Celery('celery_tutorial', broker=os.environ['BROKER'], backend='rpc://',in
 
 connTrading = fnOdbcConnect('defaultdb')
 
-hour = 16
-minute = 46
+# hour = 16
+# minute = 46
 
 CELERYBEAT_SCHEDULE = {
-    # 'fnUploadData': {
-    #     'task': 'celery_tutorial.ibClient.uploadSMAdata.fnUploadSMA',
-        # 'schedule': crontab(hour =15,minute=1,day_of_week = '1,2,3,4,5'),
+    'fnUploadData': {
+        'task': 'celery_tutorial.ibClient.uploadSMAdata.fnUploadSMA',
+        'schedule': crontab(hour =15,minute=1,day_of_week = '1,2,3,4,5'),
         # 'schedule': crontab(hour =hour,minute=minute,day_of_week = '1,2,3,4,5'),
-        # 'args': ()
-    # },
-    # 'fnRandomForestPredictor': {
-    #     'task': 'celery_tutorial.ibClient.models.mlLivePredictionsAlgo.fnLivePredict',
-        # 'schedule': crontab(hour =15,minute=6,day_of_week = '1,2,3,4,5'),
+        'args': ()
+    },
+    'fnRandomForestPredictor': {
+        'task': 'celery_tutorial.ibClient.models.mlLivePredictionsAlgo.fnLivePredict',
+        'schedule': crontab(hour =15,minute=6,day_of_week = '1,2,3,4,5'),
         # 'schedule': crontab(hour =hour,minute=minute + 6,day_of_week = '1,2,3,4,5'),
-        # 'args': ()
-    # },
+        'args': ()
+    },
     'fnIBTrader': {
         'task': 'celery_tutorial.ibClient.main.fnRunIBTrader',
         # 'schedule': crontab(hour =15,minute=11,day_of_week = '1,2,3,4,5'),

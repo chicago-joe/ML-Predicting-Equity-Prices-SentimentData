@@ -113,21 +113,21 @@ services:
 
   #Database web client
   phpmyadmin:
-#    image: phpmyadmin/phpmyadmin      # :5.0.4
-    image: ghcr.io/chicago-joe/sma-ib-trading-docker_phpmyadmin:latest
+    image: phpmyadmin/phpmyadmin:latest      # :5.0.4
+#    image: ghcr.io/chicago-joe/sma-ib-trading-docker_phpmyadmin:latest
     environment:
-      PMA_HOST: smadb-mysql-nyc1-75115-do-user-8745596-0.b.db.ondigitalocean.com
+      PMA_HOST: smadb-mysql-nyc3-92441-do-user-8902518-0.b.db.ondigitalocean.com
       PMA_PORT: 25060
       MYSQL_USERNAME: aschran89
-      MYSQL_PWD: jlkrg9tdxt5m3dc0
+      MYSQL_PWD: dz78ox0f50mn7xno
     restart: unless-stopped
     ports:
       - 8081:80
 
   #Grafana to explore and visualise data
   grafana:
-#    image: grafana/grafana      # :5.0.3
-    image: ghcr.io/chicago-joe/sma-ib-trading-grafana:v2.1
+    image: grafana/grafana:latest      # :5.0.3
+#    image: ghcr.io/chicago-joe/sma-ib-trading-grafana:v2.1
     restart: unless-stopped
     ports:
         - "127.0.0.1:7000:3000"
