@@ -318,6 +318,7 @@ def fnLivePredict():
         conn.close()
         dfAgg.set_index('date', inplace = True)
 
+
         # --------------------------------------------------------------------------------------------------
         # calculate predictions based on rolling model (refit rolling 100 days)
 

@@ -1,9 +1,31 @@
+from __future__ import print_function
 # --------------------------------------------------------------------------------------------------
-# walk-forwward-model
+# backtest_v3,py
 #
+#
+# --------------------------------------------------------------------------------------------------
 # created by Joseph Loss on 4/5/2021
+
+use_GUI = True
+
 # --------------------------------------------------------------------------------------------------
 # input parameters
+
+targetVar = 'rtnTodayToTomorrow',
+nTest = 100,
+nTrain = 489,
+winsorize = True,
+stationary = True,
+preprocessing = True,
+
+model_parameters = {
+        'rf_criterion':    'mse',               # mse, mae
+        'max_features':    'auto',              # auto, sqrt, log2, None
+        'n_estimators':    1000,
+        'min_samples_leaf':100,
+        'random_state':    42,
+        'n_jobs':          -1,
+}
 
 ticker = 'SPY'
 LOG_LEVEL = 'INFO'
@@ -12,7 +34,12 @@ LOG_LEVEL = 'INFO'
 # Module imports
 
 import os, logging, time
+from lxml import _elementpath as _dummy
+import gzip
+import lxml
+import gooey
 import glob, sys, json, datetime as dt
+from gooey import Gooey, GooeyParser, local_resource_path, PrefixTokenizers
 from collections import OrderedDict, defaultdict
 import pandas as pd
 import numpy as np
@@ -35,6 +62,152 @@ LOG_FILE_NAME = os.path.basename(__file__)
 
 
 # --------------------------------------------------------------------------------------------------
+# GUI
+
+@Gooey(program_name = "Walk-Forward Random Forest Model", menu = [{
+        'name': 'Menu',
+        'items':[
+                {
+                        'type':     'AboutDialog',
+                        'menuTitle':'About',
+                        'name':     'Walk-Forward Random Forest Model',
+                        'version':  '1.0',
+                        'developer':'Joseph Loss',
+                        'copyright':'Joseph Loss, Adam Schran',
+                },
+        ]
+}],
+       advanced = True,
+       show_restart_button = False,
+       clear_before_run = True,
+       poll_external_updates = False,
+       tabbed_groups = True,
+       navigation = 'Tabbed',
+       default_size = [
+               610,
+               750
+       ],
+   )
+def parse_args():
+
+    # parser = GooeyParser(description = "Calculate MWR for selected accounts.")
+    parser = GooeyParser()
+    # subs = parser.add_subparsers(help = 'commands', dest = 'subparser_name')
+    # subMain = subs.add_parser('Main')
+
+    # --------------------------------------------------------------------------------------------------
+    # main group
+
+    main = parser.add_argument_group("Main", gooey_options = { 'show_border':True, 'columns':2, })
+
+    main.add_argument("--FileChooser", help="Please enter the data path (.csv)", widget="FileChooser", dest="df")
+    main.add_argument('--targetVar', action='store', widget='TextField', help = 'target Y-variable')
+    main.add_argument('--nTest',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Rolling Test size',
+                            default = 100,
+                            gooey_options = { 'visible':True }
+                            )
+    main.add_argument('--nTrain',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Rolling Train size',
+                            # default = 100,
+                            gooey_options = { 'visible':True }
+                            )
+
+
+    # --------------------------------------------------------------------------------------------------
+    # main group
+
+    boolParams = main.add_argument_group('Walk-Forward options', gooey_options = {
+            'full_width':False, 'show_border':True, 'columns':2
+            # "initial_selection": 0,
+    })
+    boolParams.add_argument('--winsorize',
+                           metavar = 'Winsorize Outliers',
+                           action = "store_true",
+                           widget = 'BlockCheckbox',
+                           # help='Historical Simulation',
+                           default = True,
+                           gooey_options = {
+                                   # 'block_label':'Historical Simulation',
+                                   'checkbox_label':'Include'
+                           })
+
+    boolParams.add_argument('--stationary',
+                           metavar = 'Stationarity Test',
+                           action = "store_true",
+                           widget = 'BlockCheckbox',
+                           # help='Historical Simulation',
+                           default = True,
+                           gooey_options = {
+                                   # 'block_label':'Historical Simulation',
+                                   'checkbox_label':'Include'
+                           })
+
+    boolParams.add_argument('--preprocess',
+                           metavar = 'Data Preprocessing / Standardization',
+                           action = "store_true",
+                           widget = 'BlockCheckbox',
+                           # help='Historical Simulation',
+                           default = True,
+                           gooey_options = {
+                                   # 'block_label':'Historical Simulation',
+                                   'checkbox_label':'Include'
+                           })
+
+    modelParams = parser.add_argument_group("Model Parameters", gooey_options = { 'show_border':True, 'columns':2, })
+
+    modelParams.add_argument('--rf_criterion',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Criterion for RF Model',
+                            default = 'mse',
+                            gooey_options = { 'visible':True }
+                            )
+    modelParams.add_argument('--max_features',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Maximum number of features',
+                            default = 'auto',
+                            gooey_options = { 'visible':True }
+                            )
+    modelParams.add_argument('--n_estimators',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Number of RF Estimators',
+                            default = 1000,
+                            gooey_options = { 'visible':True }
+                            )
+    modelParams.add_argument('--min_samples_leaf',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Minimum samples per leaf',
+                            default = 100,
+                            gooey_options = { 'visible':True }
+                            )
+    modelParams.add_argument('--random_state',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Random Generator',
+                            default = 42,
+                            gooey_options = { 'visible':True }
+                            )
+    modelParams.add_argument('--n_jobs',
+                            action = 'store',
+                            widget = 'TextField',
+                            help = 'Number of Jobs',
+                            default = -1,
+                            gooey_options = { 'visible':True }
+                            )
+
+    args = parser.parse_args()
+    return dict(args._get_kwargs())
+
+
+# --------------------------------------------------------------------------------------------------
 # walk forward module
 
 def fnWalkForward(df=None, targetVar=None, nTest=None, nTrain=100, winsorize=True, stationary=True, preprocessing=True, **modelParams):
@@ -46,11 +219,11 @@ def fnWalkForward(df=None, targetVar=None, nTest=None, nTrain=100, winsorize=Tru
     # set nTest (rolling every x days)
     nTest = nTest + 1
 
-    # dpred = { }
-    dfPred = pd.DataFrame(columns=['predY'])
+    dpred = { }
+    dfLast = { }
 
     for i in range(0, len(df) - nTrain - nTest, 1):
-        lastPred, dfLast = predict(
+        dpred, dfLast = predict(
                 df[i:nTrain + nTest + i],
                 nTrain,
                 nTest,
@@ -59,11 +232,10 @@ def fnWalkForward(df=None, targetVar=None, nTest=None, nTrain=100, winsorize=Tru
                 stationary,
                 preprocessing,
                 **modelParams)
-        dfPred = dfPred.append(dfLast)
 
-    # dpred = dpred.iloc[:-1]
+    dpred = dpred.iloc[:-1]
 
-    return lastPred, dfPred
+    return dpred, dfLast
 
 
 # --------------------------------------------------------------------------------------------------
@@ -242,9 +414,8 @@ def predict(df, nTrain, nTest, targetVar, winsorize, stationary, preprocessing, 
 
     predictionsY = y_test_pred
     last_pred = predictionsY[-1]
-    dfPred = pd.DataFrame([last_pred],index=[df.index[len(df)-1].strftime('%Y-%m-%d')],columns=['predY'])
 
-    return last_pred, dfPred
+    return predictionsY, last_pred
 
 
 # --------------------------------------------------------------------------------------------------
@@ -270,16 +441,49 @@ if __name__ == '__main__':
 
     # --------------------------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------------------------
+    # todo:
     # TESTING
+
+    df = pd.read_pickle('data.pkl')
+    df.drop(columns = ['rtnTodayToTomorrowClassified'], inplace = True)
+
+    # --------------------------------------------------------------------------------------------------
+
+
+    if use_GUI:
+        conf = parse_args()
+        params
+
+    else:
+        model_parameters = model_parameters
+
+
+    print("----- Running Tax Loss Harvesting Monte Carlo -----\n\n", flush = True)
+    print('-------------------------', flush = True)
+    print('INPUTS:', flush = True)
+    print('email: {}'.format(conf.emailAddress), flush = True)
+    print('ticker: {}'.format(conf.ticker_tk), flush = True)
+    print('market value: {:,.2f}'.format(float(conf.marketValue)), flush = True)
+    print('cost basis: {:.2f}%'.format(float(conf.costBasis) * 100), flush = True)
+    if conf.historicalSim:
+        print('include historical simulation: TRUE', flush = True)
+    else:
+        print('include historical simulation: FALSE', flush = True)
+    print('benchmark: {}'.format(conf.bmarkTicker), flush = True)
+    print('market return: {:.2f}%'.format(float(conf.marketReturn) * 100), flush = True)
+    print('alpha: {:.2f}%'.format(float(conf.alpha) * 100), flush = True)
+    print('historical skew: {}'.format(conf.histSkew), flush = True)
+    print('nTrials: {:,.0f}'.format(float(conf.nTrials)), flush = True)
+    print('option tenor: {:,.0f}'.format(float(conf.optTenor)), flush = True)
+    print('nYears: {:,.0f}'.format(float(conf.nYears)), flush = True)
+    print('state tax rate: {:.2f}%'.format(float(conf.stateTaxRate) * 100), flush = True)
+    print('short term capital gains tax: {:.2f}%'.format(float(conf.stcg) * 100), flush = True)
+    print('long term capital gains tax: {:.2f}%'.format(float(conf.ltcg) * 100), flush = True)
+    print('-------------------------\n', flush = True)
+
 
     try:
 
-        # todo:
-        # read data
-        df = pd.read_pickle('data.pkl')
-        df.drop(columns = ['rtnTodayToTomorrowClassified'], inplace = True)
-
-        # rf model
         model_parameters = {
                 'rf_criterion':    'mse',
                 'max_features':    'auto',
@@ -287,9 +491,12 @@ if __name__ == '__main__':
                 'min_samples_leaf':100,
                 'random_state':    42,
                 'n_jobs':          -1,
+                # 'max_leaf_nodes':2,
+                # 'oob_score':True,
+                # 'max_depth':10
         }
 
-        lastPred, dfPred = fnWalkForward(df,
+        dpred, dfLast = fnWalkForward(df,
                                       targetVar = 'rtnTodayToTomorrow',
                                       nTest = 100,
                                       nTrain = 489,
@@ -297,8 +504,6 @@ if __name__ == '__main__':
                                       stationary = True,
                                       preprocessing = True,
                                       **model_parameters)
-        
-        
 
         logging.info("========== END PROGRAM ==========")
 
